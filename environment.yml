@@ -1,0 +1,22 @@
+channels:
+  - intel
+  - conda-forge
+  - defaults
+dependencies:
+  - cmake==3.19.6
+  - llvm-openmp
+  - inflect
+  - jemalloc
+  - libffi==3.3
+  - librosa
+  - mkl
+  - mkl-include
+  - ninja
+  - pandas
+  - pip
+  - pip:
+    - sox
+  - python==3.7.10
+  - toml
+  - tqdm
+  - unidecode

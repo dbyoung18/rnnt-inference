@@ -1,0 +1,23 @@
+TRT-8001-MinMaxCalibration
+input: 3d3c379c
+length: 406c58b1
+one_constant: 3c010204
+length_add_one: 406cd9b3
+two_constant: 3c810204
+length_half: 3fecd9b3
+encoder.pre_rnn.lstm0_output: 3c00f732
+encoder.pre_rnn.lstm0_hidden: 3c0058b4
+encoder.pre_rnn.lstm0_cell: 3f8fb0dd
+encoder.pre_rnn.lstm1_output: 3c00e06e
+encoder.pre_rnn.lstm1_hidden: 3bf0b3e5
+encoder.pre_rnn.lstm1_cell: 3ff74594
+encoder_reshape: 3c00e06e
+encoder.post_rnn.lstm0_output: 3c00fe04
+encoder.post_rnn.lstm0_hidden: 3bd3420d
+encoder.post_rnn.lstm0_cell: 3f7a2c96
+encoder.post_rnn.lstm1_output: 3c00fbf0
+encoder.post_rnn.lstm1_hidden: 3bf62332
+encoder.post_rnn.lstm1_cell: 3f950007
+encoder.post_rnn.lstm2_output: 3c010095
+encoder.post_rnn.lstm2_hidden: 3bf3e138
+encoder.post_rnn.lstm2_cell: 3fc91862

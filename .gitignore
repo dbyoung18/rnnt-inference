@@ -1,0 +1,12 @@
+**/__pycache__/*
+**/logs/*
+**/*.csv/*
+**/*.log/*
+**/*.pt/*
+**/*.swp/*
+**/cscope.*/*
+build/
+inference/
+pytorch/
+third_party/
+mlperf-rnnt-librispeech
