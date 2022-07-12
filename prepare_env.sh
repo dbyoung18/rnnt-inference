@@ -44,6 +44,8 @@ echo '==> Building pytorch'
 git clone https://github.com/pytorch/pytorch.git
 pushd pytorch
 git checkout v1.12.0
+git submodule sync
+git submodule update --init --recursive
 pip install -r requirements.txt
 USE_CUDA=OFF python -m pip install -e .
 popd
