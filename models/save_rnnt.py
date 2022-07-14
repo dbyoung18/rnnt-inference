@@ -5,53 +5,40 @@ import subprocess
 import torch
 
 from pytorch_sut import PytorchSUT
-#  from quant_rnnt import QuantRNNT
+from modeling_rnnt_quant import *
+from rnnt_qsl import RNNTQSL
+from utils import *
 
-scenario_map = {
-    "SingleStream": lg.TestScenario.SingleStream,
-    "Offline": lg.TestScenario.Offline,
-    "Server": lg.TestScenario.Server,
-}
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--perf_count", type=int, default=None, help="number of samples")
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--model_path", type=str, default="work_dir/rnnt.pt")
-    parser.add_argument("--manifest_path", type=str, required=True)
     parser.add_argument("--dataset_dir", type=str, required=True)
-    parser.add_argument("--calib_path", type=str, default=None)
-    parser.add_argument("--run_mode", default=None,
-        choices=[None, "calib", "quant", "fake_quant", "dynamic_quant"], help="run_mode, default fp32")
     parser.add_argument("--jit", action="store_true", help="enable jit")
     args = parser.parse_args()
     return args
 
 def main():
     args = parse_args()
+    rnnt = RNNT(args.model_path, run_mode="quant").eval()
+    model = GreedyDecoder(rnnt)
+    qsl = RNNTQSL(args.dataset_dir)
     # create sut & qsl 
-    sut = PytorchSUT(
-        args.model_path, args.manifest_path, args.dataset_dir,
-        perf_count=args.perf_count,
-        batch_size=args.batch_size,
-        run_mode=args.run_mode
-    )
-    # calibration
-    print("==> Running calibration...")
-    for i in range(0, sut.qsl.count, args.batch_size):
-        sut.inference(range(i, min(i+args.batch_size, sut.qsl.count)))
-    model_path = "rnnt_test.pt"
-    torch.save(sut.model.rnnt.state_dict(), model_path)
-    #  calib_dict = save_calib(args.calib_path, sut.model)
-    #  print(calib_dict)
-
+    sut = PytorchSUT(model, qsl, args.batch_size)
     print("==> Freezing model...")
     # quant & prepack
-    #  sut.model = QuantRNNT(model_path).eval()
-    #  sut.inference(range(0, args.batch_size))
- 
+    calib_model_path = os.path.join(os.path.dirname(args.model_path), "rnnt_calib.pt")
+    sut.model.rnnt = RNNT(calib_model_path, run_mode="quant").eval()
+    results = sut.inference(range(0, args.batch_size))
+    for i in range(len(results)):
+        logger.debug(f"{i}::{seq_to_sen(results[i])}")
+    quant_model_path = os.path.join(os.path.dirname(args.model_path), "rnnt_quant.pt")
+    torch.save(sut.model.rnnt.state_dict(), quant_model_path) 
     # jit
     # sut.model.rnnt = jit_model(sut.model.rnnt)
+    # jit_model_path = os.path.join(os.path.dirname(args.model_path), "rnnt_jit.pt")
+    # torch.save(sut.model.rnnt.state_dict(), jit_model_path)
 
 if __name__ == "__main__":
     main()

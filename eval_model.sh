@@ -13,6 +13,8 @@ set -x
 export PYTHONPATH=${PWD}:${PYTHONPATH}
 export LOG_LEVEL=${LOG_LEVEL}
 
+[ ${MODE} == "fake_quant" ] && MODEL_PATH="${WORK_DIR}/rnnt_calib.pt"
+
 SCRIPT_ARGS=" --scenario Offline"
 SCRIPT_ARGS+=" --batch_size ${BATCH_SIZE}"
 SCRIPT_ARGS+=" --model_path ${MODEL_PATH}"

@@ -4,7 +4,9 @@ import os
 import subprocess
 
 from pytorch_sut import PytorchSUT
+from rnnt_qsl import RNNTQSL
 from eval_accuracy import eval_acc
+from utils import *
 
 scenario_map = {
     "SingleStream": lg.TestScenario.SingleStream,
@@ -29,7 +31,7 @@ def parse_args():
     parser.add_argument("--calib_path", type=str, default=None)
     parser.add_argument("--log_dir", type=str, required=True)
     parser.add_argument("--run_mode", default=None,
-        choices=[None, "calib", "quant", "fake_quant", "dynamic_quant"], help="run_mode, default fp32")
+        choices=[None, "calib", "quant", "fake_quant"], help="run_mode, default fp32")
     parser.add_argument("--jit", action="store_true", help="enable jit")
     parser.add_argument("--accuracy", action="store_true", help="enable accuracy evaluation")
     args = parser.parse_args()
@@ -37,15 +39,15 @@ def parse_args():
 
 def main():
     args = parse_args()
+    if args.run_mode == "quant":
+        from modeling_rnnt_quant import RNNT, GreedyDecoder
+    else:
+        from modeling_rnnt import RNNT, GreedyDecoder
+    rnnt = RNNT(args.model_path, run_mode=args.run_mode).eval()
+    model = GreedyDecoder(rnnt)
+    qsl = RNNTQSL(args.dataset_dir)
     # create sut & qsl 
-    sut = PytorchSUT(
-        args.model_path, args.manifest_path, args.dataset_dir,
-        perf_count=args.perf_count,
-        batch_size=args.batch_size,
-        run_mode=args.run_mode,
-        calib_path=args.calib_path,
-        use_jit=args.jit
-    )
+    sut = PytorchSUT(model, qsl, args.batch_size)
     # set cfg
     settings = lg.TestSettings()
     settings.scenario = scenario_map[args.scenario]

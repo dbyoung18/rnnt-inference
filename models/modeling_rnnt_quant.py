@@ -1,14 +1,6 @@
-import os
-import sys
-sys.path.insert(0, os.path.join(os.getcwd(), "tests"))
-# import _C as P
-import numpy as np
 import torch
 from torch.nn import Linear
-#  from torch.nn import LSTM
-#  from rnn import LSTM
-from quant_rnn import QuantLSTM as LSTM
-#  from pytorch_quantization.nn import QuantLSTM as LSTM
+from rnn import LSTM
 from typing import List, Tuple
 from utils import *
 
@@ -84,26 +76,14 @@ class RNNT(torch.nn.Module):
         self.prediction = Prediction()
         self.joint = Joint()
         if model_path is not None:
-            self._init_weights(model_path)
+            self._load_model(model_path)
 
-    def _init_weights(self, model_path):
+    def _load_model(self, model_path):
         model = torch.load(model_path, map_location="cpu")
         state_dict = migrate_state_dict(model)
+        self.transcription.pre_rnn._init_quantizers()
+        self.transcription.post_rnn._init_quantizers()
         self.load_state_dict(state_dict)
-
-    def _init_scales(self, calib_path):
-        calib_dict = parse_calib(calib_path)
-        #  for layer in range(RNNTParam.pre_num_layers):
-            #  self.transcription.pre_rnn._input_quantizers[layer]._scale = 1 / calib_dict["input"]
-
-        #  for layer in range(RNNTParam.post_num_layers):
-            #  self.transcription.post_rnn._input_quantizers[layer]._scale = 1 / calib_dict["encoder_reshape"]
-        
-        self.transcription.pre_rnn._input_quantizers[0]._scale = 1 / calib_dict["input"]
-        self.transcription.pre_rnn._input_quantizers[1]._scale = 127
-        self.transcription.post_rnn._input_quantizers[0]._scale = 127
-        self.transcription.post_rnn._input_quantizers[1]._scale = 127
-        self.transcription.post_rnn._input_quantizers[2]._scale = 127
 
 
 class Transcription(torch.nn.Module):
@@ -138,11 +118,10 @@ class Prediction(torch.nn.Module):
             RNNTParam.num_labels-1,
             RNNTParam.pred_hidden_size
         )
-        self.pred_rnn = LSTM(
+        self.pred_rnn = torch.nn.LSTM(
             RNNTParam.pred_hidden_size,
             RNNTParam.pred_hidden_size,
             RNNTParam.pred_num_layers,
-            run_mode=run_mode
         )
 
     def forward(self, x: torch.Tensor,
@@ -167,7 +146,6 @@ class Joint(torch.nn.Module):
 
     def forward(self, f: torch.Tensor, g: torch.Tensor) -> torch.Tensor: 
         x = torch.cat([f, g], dim=1)
-        # TODO: fuse linear1 + relu
         y1 = self.linear1(x)
         y2 = self.relu(y1)
         y = self.linear2(y2)

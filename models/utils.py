@@ -76,3 +76,18 @@ def save_calib(calib_path, model):
         json.dump(calib_dict, calib_file, indent=4)
     return calib_dict
 
+def init_scales(model, calib_path):
+    calib_dict = parse_calib(calib_path)
+    for layer in range(2):
+        model.transcription.pre_rnn._input_quantizers[layer]._scale = 1 / calib_dict["input"]
+
+    for layer in range(3):
+        model.transcription.post_rnn._input_quantizers[layer]._scale = 1 / calib_dict["encoder_reshape"]
+    
+    # model.transcription.pre_rnn._input_quantizers[0]._scale = 1 / calib_dict["input"]
+    # model.transcription.pre_rnn._input_quantizers[1]._scale = 127
+    # model.transcription.post_rnn._input_quantizers[0]._scale = 127
+    # model.transcription.post_rnn._input_quantizers[1]._scale = 127
+    # model.transcription.post_rnn._input_quantizers[2]._scale = 127
+    return model
+

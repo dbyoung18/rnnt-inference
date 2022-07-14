@@ -6,26 +6,15 @@ import array
 import mlperf_loadgen as lg
 import torch
 
-from datasets.preprocessing import AudioPreprocessing
-from rnnt import *
-from rnnt_qsl import RNNTQSL
 from utils import *
 
 
 class PytorchSUT:
-    def __init__(self, model_path, manifest_path, dataset_dir, **kwargs):
-        use_jit = kwargs.pop("use_jit", False)
-        run_mode = kwargs.pop("run_mode", None)
-        perf_count = kwargs.pop("perf_count", None)
-        self.batch_size = kwargs.pop("batch_size", 1)
-        self.qsl = RNNTQSL(dataset_dir, perf_count)
+    def __init__(self, model, qsl, batch_size=1, **kwargs):
+        self.batch_size = batch_size
+        self.model = model
+        self.qsl = qsl
         self.sut = lg.ConstructSUT(self.issue_queries, self.flush_queries)
-        rnnt = RNNT(model_path, run_mode).eval()
-        #  if run_mode == "fake_quant" or run_mode == "quant":
-            #  rnnt._init_scales(kwargs.pop("calib_path", None))
-        if use_jit:
-            rnnt = jit_model(rnnt)
-        self.model = GreedyDecoder(rnnt)
 
     def issue_queries(self, samples):
         for i in range(0, len(samples), self.batch_size):

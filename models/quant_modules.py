@@ -7,6 +7,7 @@ from torch import Tensor
 from torch.nn.parameter import Parameter
 from torch.nn import functional as F
 from typing import List, Optional, Tuple
+import approximate
 
 
 def round_and_clamp(input, _min: float, _max: float):
@@ -84,23 +85,20 @@ class TensorQuantizer(nn.Module):
     Tensor Quantizer contain same buffers as pytorch-quantization
 
     Args:
-        mode: calib/quant/fake_quant/dynamic_quant
+        mode: calib/quant/fake_quant
 
     """
     def __init__(self, quant_desc=QuantDescriptor(), **kwargs):
         super(TensorQuantizer, self).__init__()
         self._mode = quant_desc.mode
         self._axis = quant_desc._axis
-        if quant_desc._amax is not None:
-            self.register_buffer("_amax", torch.tensor(quant_desc._amax))
-        #  else:
-            #  self.register_buffer("_amax", None)
+        self.amax = torch.tensor(quant_desc._amax) if quant_desc._amax != None else torch.tensor(0.)
         self._scale = None
         self._calibrator = None if quant_desc.mode != "calib" else Calibrator(self._axis)
-        self._bound = torch.tensor(127., dtype=torch.float32)
+        self._max_bound = torch.tensor(127., dtype=torch.float32)
+        self._min_bound = -self._max_bound if quant_desc.narrow_bound else -self._max_bound-1
         self._name = kwargs.pop("name", None)
-        self._update_amax = quant_desc.update_amax
-        self._narrow_bound = quant_desc.narrow_bound
+        self._update_amax = quant_desc.update_amax  # dynamic
 
     @property
     def amax(self):
@@ -115,56 +113,106 @@ class TensorQuantizer(nn.Module):
 
     @property
     def scale(self):
-        return self._scale if self._scale is not None else self._bound / self._amax
+        return self._scale if self._scale != None else self._max_bound / self._amax
 
     @scale.setter
     def scale(self, value):
         self._scale = value
 
     def _quant_forward(self, inputs):
-        if self._scale is None or self._update_amax:
-            self.amax = torch.max(inputs.abs(), self._axis).values.unsqueeze(self._axis) \
-                if self._axis is not None else torch.max(inputs.abs())
+        if self._update_amax:
+            if self._axis != None:
+                self.amax = torch.max(inputs.abs(), self._axis).values.unsqueeze(self._axis)
+            else:
+                self.amax = torch.max(inputs.abs())
+
+        outputs = round_and_clamp(inputs * self.scale, self._min_bound, self._max_bound)
+        outputs = outputs.type(torch.int8)
+        return outputs
+
+    def _fake_quant_forward(self, inputs):
+        if self._update_amax:
+            if self._axis != None:
+                self.amax = torch.max(inputs.abs(), self._axis).values.unsqueeze(self._axis)
+            else:
+                self.amax = torch.max(inputs.abs())
         
-        min_bound = -self._bound if self._narrow_bound else -self._bound - 1
-        outputs = round_and_clamp(inputs * self.scale, min_bound, self._bound)
-        if self._mode == "fake_quant":
-            outputs /= self.scale
+        outputs = round_and_clamp(inputs * self.scale, self._min_bound, self._max_bound)
+        outputs /= self.scale
         return outputs
 
     def forward(self, inputs):
         outputs = inputs
         if self._mode == "calib":
             self.amax = self._calibrator.collect(inputs)
-        elif self._mode == "quant" or self._mode == "fake_quant":
+        elif self._mode == "quant":
             outputs = self._quant_forward(inputs)
+        elif self._mode == "fake_quant":
+            outputs = self._fake_quant_forward(inputs)
         return outputs
 
     def __str__(self):
-        s = (self._name + ': ') if self._name is not None else 'TensorQuantizer'
+        s = (self._name + ': ') if self._name != None else 'TensorQuantizer'
         s += f" mode=${self._mode}"
         s += f" axis=${self._axis}"
         s += f" amax=${self._amax}"
         s += f" scale=${self._scale}"
-        s += f" bound=${self._bound}"
+        s += f" max_bound=${self._max_bound}"
+        s += f" min_bound=${self._min_bound}"
         return s
+
+
+class WeightQuantizer(TensorQuantizer):
+    def __init__(self, quant_desc=QuantDescriptor(), **kwargs):
+        super(WeightQuantizer, self).__init__(quant_desc)
+
+    def _quant_forward(self, inputs):
+        if self._scale == None:
+            if self._axis != None:
+                self.amax = torch.max(inputs.abs(), self._axis).values.unsqueeze(self._axis)
+            else:
+                self.amax = torch.max(inputs.abs())
+            self.scale = self._max_bound / self.amax
+
+        outputs = round_and_clamp(inputs * self.scale, self._min_bound, self._max_bound)
+        outputs = outputs.type(torch.int8)
+        prepacked_outputs = P.prepack_linear_weight(outputs)
+        return prepacked_outputs
+
+    def _fake_quant_forward(self, inputs):
+        if self._scale == None:
+            if self._axis != None:
+                self.amax = torch.max(inputs.abs(), self._axis).values.unsqueeze(self._axis)
+            else:
+                self.amax = torch.max(inputs.abs())
+            self.scale = self._max_bound / self.amax
+        
+        outputs = round_and_clamp(inputs * self.scale, self._min_bound, self._max_bound)
+        outputs /= self.scale
+        return outputs
+
+    def forward(self, inputs):
+        outputs = inputs
+        if self._mode == "quant":
+            outputs = self._quant_forward(inputs)
+        elif self._mode == "fake_quant":
+            outputs = self._fake_quant_forward(inputs)
+        return outputs
 
 
 class QuantLSTM(nn.LSTM):
     def __init__(self, input_size, hidden_size, num_layers, **kwargs):
         super(QuantLSTM, self).__init__(input_size, hidden_size, num_layers)
-        self._set_all_weights()
+        # self._set_all_weights()
         self.run_mode = kwargs.pop("run_mode", None)
-        if self.run_mode is not None:
-            self._init_quantizers()
 
     def _init_quantizers(self):
-        QUANT_LSTM_INPUT.mode = self.run_mode
+        if self.run_mode != None:
+            QUANT_LSTM_INPUT.mode = self.run_mode
         self._input_quantizers = nn.ModuleList(
             [TensorQuantizer(QUANT_LSTM_INPUT) for _ in range(self.num_layers)])
-        if self.run_mode != "calib":
-            self._weight_quantizers = nn.ModuleList(
-                [TensorQuantizer(QUANT_LSTM_WEIGHT) for _ in range(self.num_layers)])
+        self._weight_quantizers = nn.ModuleList(
+            [WeightQuantizer(QUANT_LSTM_WEIGHT) for _ in range(self.num_layers)])
 
     def _set_all_weights(self, weights=None) -> List[List[Parameter]]:
         if weights == None:
@@ -184,7 +232,7 @@ class QuantLSTM(nn.LSTM):
         hy_list, cy_list = [], []
         for layer in range(self.num_layers):
             layer_hx, layer_cx = hx[layer], cx[layer]
-            (w_ih, w_hh, b_ih, b_hh) = self.weights[layer][:]
+            (w_ih, w_hh, b_ih, b_hh) = self.all_weights[layer][:]
             input_quantizer = self._input_quantizers[layer] if hasattr(self, "_input_quantizers") else None
             weight_quantizer = self._weight_quantizers[layer] if hasattr(self, "_weight_quantizers") else None
 
@@ -206,6 +254,8 @@ class QuantLSTM(nn.LSTM):
             b_ih: Tensor=None, b_hh: Tensor=None,
             input_quantizer=None, weight_quantizer=None):
         y_list = []
+        if weight_quantizer != None and self.run_mode != None and self.run_mode != "calib":
+            w_ih, w_hh = weight_quantizer(torch.cat([w_ih, w_hh], 1)).split([w_ih.size(1), w_hh.size(1)], 1)
         for step in range(x.size(0)):
             hx, cx = self.lstm_cell(
                 x[step], hx, cx,
@@ -233,36 +283,21 @@ class QuantLSTM(nn.LSTM):
             yt = ht: {N, OC}
             ct: {N, OC}
         """
-        if input_quantizer != None:
+        if input_quantizer != None and self.run_mode != None:
             xt, ht_1 = input_quantizer(torch.cat([xt, ht_1], 1)).split([xt.size(1), ht_1.size(1)], 1)
-        if weight_quantizer != None:
-            w_ih, w_hh = weight_quantizer(torch.cat([w_ih, w_hh], 1)).split([w_ih.size(1), w_hh.size(1)], 1)
+        # if weight_quantizer != None and self.run_mode != None and self.run_mode != "calib":
+            # w_ih, w_hh = weight_quantizer(torch.cat([w_ih, w_hh], 1)).split([w_ih.size(1), w_hh.size(1)], 1)
+            # weight_quantizer.scale = weight_quantizer._max_bound / torch.max(torch.cat([w_ih, w_hh], 1))
+            # w_ih = weight_quantizer(w_ih)
+            # w_hh = weight_quantizer(w_hh)
 
-        if self.run_mode == "quant":
-            o_scale = input_quantizer.scale * weight_quantizer.scale
-            xt = xt.type(torch.int8)
-            ht_1 = ht_1.type(torch.int8)
-            w_ih = w_ih.type(torch.int8)
-            w_hh = w_hh.type(torch.int8)
-            gates = P.linear(xt, w_ih, b_ih, o_scale.item(), None) + P.linear(ht_1, w_hh, b_hh, o_scale.item(), None) 
-            #  quant_b = (b_ih + b_hh) * o_scale
-            #  gates = torch.matmul(xt, torch.t(w_ih)) + torch.matmul(ht_1, torch.t(w_hh)) + quant_b
-            #  gates /= o_scale
-        else:
-            gates = F.linear(xt, w_ih, b_ih) + F.linear(ht_1, w_hh, b_hh)
+        gates = F.linear(xt, w_ih, b_ih) + F.linear(ht_1, w_hh, b_hh)
         it, ft, gt, ot = gates.chunk(4, 1)
         it = torch.sigmoid(it)
         ft = torch.sigmoid(ft)
         gt = torch.tanh(gt)
         ot = torch.sigmoid(ot)
-
-        ft = round_and_clamp(ft*127, -127, 127) / 127
-        ct_1 = round_and_clamp(ct_1*127, -127, 127) / 127
-        it = round_and_clamp(it*127, -127, 127) / 127
-        gt = round_and_clamp(gt*127, -127, 127) / 127
-
         ct = (ft * ct_1) + (it * gt)
-
         ht = ot * torch.tanh(ct)
         return ht, ct
 
