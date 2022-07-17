@@ -55,7 +55,8 @@ git submodule sync
 git submodule update --init --recursive
 mkdir build
 pushd build
-cmake -DBUILD_TPPS_INTREE=ON -DCMAKE_PREFIX_PATH="$(dirname $(python3 -c 'import torch; print(torch.__file__)'))" -GNinja -DUSERCP=ON -DCMAKE_BUILD_TYPE=Release ..
+# cmake -DBUILD_TPPS_INTREE=ON -DCMAKE_PREFIX_PATH="$(dirname $(python3 -c 'import torch; print(torch.__file__)'))" -GNinja -DUSERCP=ON -DCMAKE_BUILD_TYPE=Release ..
+cmake -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DBUILD_TPPS_INTREE=ON -DCMAKE_PREFIX_PATH="$(dirname $(python3 -c 'import torch; print(torch.__file__)'));../cmake/Modules" -GNinja -DUSERCP=ON -DCMAKE_BUILD_TYPE=Release ..
 ninja
 popd
 
