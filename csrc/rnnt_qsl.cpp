@@ -1,6 +1,7 @@
 #include <c10/core/MemoryFormat.h>
 #include <c10/core/TensorOptions.h>
 #include <c10/util/Exception.h>
+#include <ATen/ATen.h>
 #include <cassert>
 #include "rnnt_qsl.hpp"
 
