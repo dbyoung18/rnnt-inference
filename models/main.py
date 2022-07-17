@@ -34,6 +34,7 @@ def parse_args():
         choices=[None, "calib", "quant", "fake_quant"], help="run_mode, default fp32")
     parser.add_argument("--jit", action="store_true", help="enable jit")
     parser.add_argument("--split_fc1", action="store_true", help="split joint linear1")
+    parser.add_argument("--enable_preprocess", action="store_true", help="enable audio preprocess")
     parser.add_argument("--accuracy", action="store_true", help="enable accuracy evaluation")
     args = parser.parse_args()
     return args
@@ -48,7 +49,7 @@ def main():
     model = GreedyDecoder(rnnt)
     qsl = RNNTQSL(args.dataset_dir)
     # create sut & qsl 
-    sut = PytorchSUT(model, qsl, args.batch_size)
+    sut = PytorchSUT(model, qsl, args.batch_size, args.enable_preprocess, args.toml_path)
     # set cfg
     settings = lg.TestSettings()
     settings.scenario = scenario_map[args.scenario]

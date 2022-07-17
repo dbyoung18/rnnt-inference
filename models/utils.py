@@ -1,6 +1,8 @@
 import logging
 import numpy as np
 import os
+import torch
+
 
 LOG_LEVEL=int(os.environ['LOG_LEVEL']) if 'LOG_LEVEL' in os.environ else logging.INFO
 LOG_FORMAT="[%(filename)s:%(lineno)d %(levelname)s] %(message)s"

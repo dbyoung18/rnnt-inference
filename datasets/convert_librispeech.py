@@ -86,9 +86,6 @@ def flac_to_wav(args, name, dest_dir, output_json):
     with open(output_json, "w") as fp:
         json.dump(dataset, fp, indent=2)
 
-def filter_dataset(args, dataset, name):
-    pass
-
 def preprocess_dataset(args, name, data_layer, data_preprocessor):
     x_npy_dir = os.path.join(args.output_dir, "npy", name, "fp32")
     x_len_npy_dir = os.path.join(args.output_dir, "npy", name, "int32")
@@ -105,7 +102,7 @@ def preprocess_dataset(args, name, data_layer, data_preprocessor):
     feas = []
     fea_lens = []
     for idx, data in enumerate(data_layer.data_iterator):
-        wavs.append(data[0])
+        wavs.append(data[0].squeeze())
         wav_lens.append(data[1])
 
         fea, fea_len = data_preprocessor((data[0], data[1]))
