@@ -95,6 +95,5 @@ class LSTM(QuantLSTM):
         ot = torch.sigmoid(ot)
         ct = (ft * ct_1) + (it * gt)
         ht = ot * torch.tanh(ct)
-        # ht = input_quantizer(ht)
         return ht, ct
 

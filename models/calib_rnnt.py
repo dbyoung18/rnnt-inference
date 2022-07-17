@@ -15,12 +15,13 @@ def parse_args():
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--model_path", type=str, default="work_dir/rnnt.pt")
     parser.add_argument("--dataset_dir", type=str, required=True)
+    parser.add_argument("--split_fc1", action="store_true", help="split joint linear1")
     args = parser.parse_args()
     return args
 
 def main():
     args = parse_args()
-    rnnt = RNNT(args.model_path, run_mode="calib").eval()
+    rnnt = RNNT(args.model_path, run_mode="calib", split_fc1=args.split_fc1).eval()
     model = GreedyDecoder(rnnt)
     qsl = RNNTQSL(args.dataset_dir)
     # create sut & qsl 

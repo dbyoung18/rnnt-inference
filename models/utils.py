@@ -15,10 +15,14 @@ def seq_to_sen(seq):
     sen = "".join([labels[idx] for idx in seq])
     return sen
 
-def migrate_state_dict(model):
+def migrate_state_dict(model, split_fc1=False):
     state_dict = model["state_dict"] if "state_dict" in model else model
     migrated_state_dict = {}
     for key, value in state_dict.items():
+        if key == "joint_net.0.weight" and split_fc1:
+            migrated_state_dict["joint.linear1_trans.weight"] = value[:, : 1024]
+            migrated_state_dict["joint.linear1_pred.weight"] = value[:, 1024 : ]
+            continue
         key = key.replace("encoder.pre_rnn.lstm", "transcription.pre_rnn")
         key = key.replace("encoder.post_rnn.lstm", "transcription.post_rnn")
         key = key.replace("dec_rnn.lstm", "pred_rnn")

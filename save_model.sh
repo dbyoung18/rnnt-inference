@@ -16,6 +16,7 @@ export LOG_LEVEL=${LOG_LEVEL}
 SCRIPT_ARGS=" --batch_size ${BATCH_SIZE}"
 SCRIPT_ARGS+=" --model_path ${MODEL_PATH}"
 SCRIPT_ARGS+=" --dataset_dir ${WORK_DIR}/train-clean-100-input.pt"
+SCRIPT_ARGS+=" --split_fc1"
 [ ${JIT} == true ] && SCRIPT_ARGS+=" --jit"
 [ ${DEBUG} == "pdb" ] && EXEC_ARGS="ipdb3"
 [ ${DEBUG} == "gdb" ] && EXEC_ARGS="gdb --args python"

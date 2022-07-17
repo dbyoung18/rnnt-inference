@@ -1,6 +1,5 @@
 import torch
 from torch.nn import Linear
-#  from torch.nn import LSTM
 from quant_modules import QuantLSTM as LSTM
 from typing import List, Tuple
 from utils import *
@@ -71,24 +70,24 @@ class GreedyDecoder(torch.nn.Module):
 
 
 class RNNT(torch.nn.Module):
-    def __init__(self, model_path=None, run_mode=None):
+    def __init__(self, model_path=None, run_mode=None, split_fc1=False):
         super().__init__()
         self.transcription = Transcription(run_mode)
-        self.prediction = Prediction()
-        self.joint = Joint()
-        self.run_mode = run_mode
+        self.prediction = Prediction(run_mode)
+        self.joint = Joint(split_fc1)
         if model_path is not None:
-            self._load_model(model_path)
+            saved_quantizers = False if run_mode == None or run_mode == "calib" else True
+            self._load_model(model_path, saved_quantizers, split_fc1)
 
-    def _load_model(self, model_path):
+    def _load_model(self, model_path, saved_quantizers=False, split_fc1=False):
         model = torch.load(model_path, map_location="cpu")
-        state_dict = migrate_state_dict(model)
-        if self.run_mode == "fake_quant": 
+        state_dict = migrate_state_dict(model, split_fc1)
+        if saved_quantizers:
             self.transcription.pre_rnn._init_quantizers()
             self.transcription.post_rnn._init_quantizers()
-            self.load_state_dict(state_dict)
+            self.load_state_dict(state_dict, strict=False)
         else:
-            self.load_state_dict(state_dict)
+            self.load_state_dict(state_dict, strict=False)
             self.transcription.pre_rnn._init_quantizers()
             self.transcription.post_rnn._init_quantizers()
 
@@ -147,21 +146,37 @@ class Prediction(torch.nn.Module):
 
 
 class Joint(torch.nn.Module):
-    def __init__(self, **kwargs):
+    def __init__(self, split_fc1=False, **kwargs):
         super().__init__()
-        self.linear1 = Linear(
-            RNNTParam.trans_hidden_size+RNNTParam.pred_hidden_size,
-            RNNTParam.joint_hidden_size
-        )
+        self.split_fc1 = split_fc1
+        if self.split_fc1:
+            self.linear1_trans = Linear(
+                RNNTParam.trans_hidden_size,
+                RNNTParam.joint_hidden_size
+            )
+            self.linear1_pred = Linear(
+                RNNTParam.pred_hidden_size,
+                RNNTParam.joint_hidden_size
+            )
+        else:
+            self.linear1 = Linear(
+                RNNTParam.trans_hidden_size+RNNTParam.pred_hidden_size,
+                RNNTParam.joint_hidden_size
+            )
         self.relu = torch.nn.ReLU()
         self.linear2 = Linear(
             RNNTParam.joint_hidden_size,
             RNNTParam.num_labels
         )
 
-    def forward(self, f: torch.Tensor, g: torch.Tensor) -> torch.Tensor: 
-        x = torch.cat([f, g], dim=1)
-        y1 = self.linear1(x)
+    def forward(self, f: torch.Tensor, g: torch.Tensor) -> torch.Tensor:
+        if self.split_fc1:
+            f = self.linear1_trans(f)
+            g = self.linear1_pred(g)
+            y1 = f + g
+        else:
+            x = torch.cat([f, g], dim=1)
+            y1 = self.linear1(x)
         y2 = self.relu(y1)
         y = self.linear2(y2)
         return y
