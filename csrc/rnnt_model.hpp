@@ -67,7 +67,6 @@ public:
     torch::Tensor pre_hg = torch::zeros({pred_num_layers, batch_size, pred_hidden_size});
     torch::Tensor pre_cg = torch::zeros({pred_num_layers, batch_size, pred_hidden_size});
 
-    int loop = 0;
     while (true) {
       auto pred_res = prediction({pre_g, std::make_tuple(pre_hg, pre_cg)}).toTuple()->elements();
       auto g = pred_res[0].toTensor();
@@ -85,7 +84,7 @@ public:
       	    res[i].push_back(symbols[i].item().toInt());
       }
 
-      // update decoder queue
+      // update g
       if (torch::count_nonzero(no_blank_idxs).item().toInt() != 0) {
       	pre_g.index_put_({0, no_blank_idxs}, symbols.index({no_blank_idxs}));
       	pre_hg.index_put_({0, no_blank_idxs, "..."}, hg.index({0, no_blank_idxs, "..."}));
@@ -94,7 +93,7 @@ public:
       	pre_cg.index_put_({1, no_blank_idxs, "..."}, cg.index({1, no_blank_idxs, "..."}));
       }
 
-      // update encoder queue
+      // update f
       if (torch::count_nonzero(no_blank_idxs).item().toInt() != batch_size) {
       	time_idxs += ~no_blank_idxs;
       	time_idxs = time_idxs.min(eos_idxs);  // TODO: add early response
@@ -103,7 +102,6 @@ public:
       	auto fetch_idxs = time_idxs.unsqueeze(1).unsqueeze(0).expand({1, batch_size, trans_hidden_size});
       	fi = f.gather(0, fetch_idxs).squeeze(0);
       }
-      loop += 1;
     }
     return res;
   }

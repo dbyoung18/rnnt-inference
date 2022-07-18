@@ -14,10 +14,12 @@
 RNNTOfflineSUT::RNNTOfflineSUT(
     const std::string& model_file,
     const std::string& sample_file,
+    const std::string& preprocessor_file,
     int inter_parallel,
     int intra_parallel,
     int batch, bool ht
-  ) : qsl_(sample_file), model_(model_file), mThreshold_(batch),
+  ) : qsl_(sample_file), model_(model_file),
+  preprocessor_(preprocessor_file), mThreshold_(batch),
   nProcsPerInstance_(intra_parallel), nInstances_(inter_parallel), mHt_(ht) {
 
   auto nMaxProc = kmp::KMPLauncher::getMaxProc();
@@ -85,8 +87,9 @@ void RNNTOfflineSUT::thInstance(int index) {
     std::vector<mlperf::QuerySampleIndex> indices (samples.size());
     std::transform(samples.cbegin(), samples.cend(), indices.begin(),
         [](mlperf::QuerySample sample) {return sample.index;});
-    auto stack = qsl_.AssembleSamples(std::move(indices));
-    auto results = model_.inference_at(which, stack);
+    auto wav_stack = qsl_.AssembleSamples(std::move(indices));
+    auto results = preprocessor_.inference_at(which, wav_stack);
+    // auto results = model_.inference_at(which, fea_stack);
     QuerySamplesComplete(samples, results);
   }
 }

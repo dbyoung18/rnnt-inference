@@ -4,42 +4,46 @@ set -x
 export LD_PRELOAD=${CONDA_PREFIX}/lib/libjemalloc.so
 export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:percpu,metadata_thp:always,dirty_decay_ms:9000000000,muzzy_decay_ms:9000000000";
 
-mode=${1:-"Offline"}
-accuracy=${2:-""}
+: ${SCENARIO=${1:-"Offline"}}
+: ${ACCURACY=${2:-""}}
+: ${DEBUG:=false}
 
-sut_dir=$(pwd)
-executable=${sut_dir}/build/rnnt_inference
-work_dir=${sut_dir}/mlperf-rnnt-librispeech
-out_dir="${work_dir}/logs/${mode}"
-mkdir -p ${out_dir} ${work_dir}
+SUT_DIR=$(pwd)
+EXECUTABLE=${SUT_DIR}/build/rnnt_inference
+WORK_DIR=${SUT_DIR}/mlperf-rnnt-librispeech
+OUT_DIR="${WORK_DIR}/logs/${SCENARIO}"
+mkdir -p ${OUT_DIR} ${WORK_DIR}
 
-if [[ ${mode} == "Offline" ]]; then
+if [[ ${SCENARIO} == "Offline" ]]; then
   num_instance=1
   core_per_instance=56
   batch_size=32
-elif [[ ${mode} == "Server" ]]; then
+elif [[ ${SCENARIO} == "Server" ]]; then
   num_instance=1
   core_per_instance=80
   batch_size=128
 fi
 
-config="--test_scenario=${mode} \
-	--model_file=${work_dir}/rnnt_jit_quant.pt \
-	--sample_file=${work_dir}/data_input_test.pt \
-	--mlperf_config=${sut_dir}/inference/mlperf.conf \
-	--user_config=${sut_dir}/configs/user.conf \
-	--output_dir=${out_dir} \
-	--inter_parallel=${num_instance} \
-        --intra_parallel=${core_per_instance} \
-	--batch_size=${batch_size} \
-	${accuracy}"
+SCRIPT_ARGS=" --test_scenario=${SCENARIO}"
+SCRIPT_ARGS+=" --model_file=${WORK_DIR}/rnnt_jit.pt"
+SCRIPT_ARGS+=" --sample_file=${WORK_DIR}/dev-clean-npy.pt"
+SCRIPT_ARGS+=" --preprocessor_file=${WORK_DIR}/audio_preprocessor_jit.pt"
+SCRIPT_ARGS+=" --mlperf_config=${SUT_DIR}/inference/mlperf.conf"
+SCRIPT_ARGS+=" --user_config=${SUT_DIR}/configs/user.conf"
+SCRIPT_ARGS+=" --output_dir=${OUT_DIR}"
+SCRIPT_ARGS+=" --inter_parallel=${num_instance}"
+SCRIPT_ARGS+=" --intra_parallel=${core_per_instance}"
+SCRIPT_ARGS+=" --batch_size=${batch_size}"
+SCRIPT_ARGS+="${accuracy}"
 
-${executable} ${config}
+[ ${DEBUG} == "gdb" ] && EXEC_ARGS="gdb --args"
 
-if [[ ${accuracy} == "--accuracy" ]]; then 
+${EXEC_ARGS} ${EXECUTABLE} ${SCRIPT_ARGS}
+
+if [[ ${ACCURACY} == "--accuracy" ]]; then
   python eval_accuracy.py \
-    --log_path=${out_dir}/mlperf_log_accuracy.json \
-    --manifest_path=${work_dir}/local_data/wav/dev-clean-wav.json 
+    --log_path=${OUT_DIR}/mlperf_log_accuracy.json \
+    --manifest_path=${WORK_DIR}/local_data/wav/dev-clean-wav.json
 fi
 
 set +x

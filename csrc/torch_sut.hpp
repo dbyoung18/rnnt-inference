@@ -18,6 +18,7 @@
 #include "kmp_launcher.hpp"
 #include "rnnt_qsl.hpp"
 #include "rnnt_model.hpp"
+#include "rnnt_preprocessor.hpp"
 
 class RNNTOfflineSUT : public mlperf::SystemUnderTest {
 
@@ -29,6 +30,7 @@ public:
   RNNTOfflineSUT (
       const std::string& model_file,
       const std::string& samples_file,
+      const std::string& preprocessor_file,
       int inter_parallel,
       int intra_parallel,
       int batch, bool ht = true
@@ -59,6 +61,7 @@ public:
 private:
   qsl::RNNTQuerySampleLibrary qsl_;
   models::TorchModel model_;
+  models::TorchModel preprocessor_;
 
   std::condition_variable ctrl_;
   std::mutex mtx_;
