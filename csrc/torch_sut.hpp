@@ -19,9 +19,21 @@
 #include "rnnt_qsl.hpp"
 #include "rnnt_model.hpp"
 #include "rnnt_preprocessor.hpp"
+#include <torch/csrc/autograd/profiler_legacy.h>
+
+class ProfileRecord {
+public:
+  ProfileRecord (bool is_record, const std::string& profiler_file);
+  virtual ~ProfileRecord(){};
+
+private:
+  bool is_record_;
+  std::string profiler_file_;
+  std::unique_ptr<torch::autograd::profiler::RecordProfile> torch_profiler;
+};
+
 
 class RNNTOfflineSUT : public mlperf::SystemUnderTest {
-
   using Queue_t = std::list<mlperf::QuerySample>;
   // using Queue_t = std::forward_list<mlperf::QuerySample>
   // using Queue_t = std::deque<mlperf::QuerySample>;
@@ -33,7 +45,10 @@ public:
       const std::string& preprocessor_file,
       int inter_parallel,
       int intra_parallel,
-      int batch, bool ht = true
+      int batch,
+      bool ht = true,
+      bool profiler = false,
+      const std::string& profiler_foler = ""
   );
 
   ~RNNTOfflineSUT ();
@@ -81,6 +96,9 @@ private:
   int nProcsPerInstance_;
   int nInstances_;
   bool mHt_;
+  bool profiler_flag_;
+  std::string profiler_folder_;
+  // std::unique_ptr<ProfileRecord> guard_;
 
   int rootProc(int index);
   void thInstance(int index);

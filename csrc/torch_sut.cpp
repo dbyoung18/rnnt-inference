@@ -8,8 +8,20 @@
 #include <type_traits>
 #include <loadgen.h>
 #include <query_sample.h>
+#include <iostream>
+#include <fstream>
 
 #include "torch_sut.hpp"
+
+ProfileRecord::ProfileRecord(
+  bool is_record,
+  const std::string& profiler_file
+) : is_record_(is_record), profiler_file_(profiler_file) {
+  if (is_record_)
+  {
+    torch_profiler = std::make_unique<torch::autograd::profiler::RecordProfile>(profiler_file_);
+  }
+}
 
 RNNTOfflineSUT::RNNTOfflineSUT(
     const std::string& model_file,
@@ -17,10 +29,13 @@ RNNTOfflineSUT::RNNTOfflineSUT(
     const std::string& preprocessor_file,
     int inter_parallel,
     int intra_parallel,
-    int batch, bool ht
+    int batch, bool ht,
+    bool profiler,
+    const std::string& profiler_folder
   ) : qsl_(sample_file), model_(model_file),
   preprocessor_(preprocessor_file), mThreshold_(batch),
-  nProcsPerInstance_(intra_parallel), nInstances_(inter_parallel), mHt_(ht) {
+  nProcsPerInstance_(intra_parallel), nInstances_(inter_parallel), mHt_(ht),
+  profiler_flag_(profiler), profiler_folder_(profiler_folder) {
 
   auto nMaxProc = kmp::KMPLauncher::getMaxProc();
 
@@ -64,36 +79,44 @@ void RNNTOfflineSUT::thInstance(int index) {
   Queue_t snippet;
 
   // Wait for work
-  while (true) {
-    // critical section
-    {
-      std::unique_lock<std::mutex> l(mtx_);
-      ctrl_.wait(l, [this] {return mStop_ || !mQueue_.empty();});
+  std::string log_name;
+  if (profiler_flag_) {
+    log_name = profiler_folder_ + "/test_log_" + std::to_string(index) + "_" + std::to_string(which) + ".json";
+    std::ofstream out(log_name);
+  }
+  {
+    auto guard_ = std::make_unique<ProfileRecord>(profiler_flag_, log_name);
+    while (true) {
+      // critical section
+      {
+        std::unique_lock<std::mutex> l(mtx_);
+        ctrl_.wait(l, [this] {return mStop_ || !mQueue_.empty();});
 
-      if (mStop_)
-        break;
+        if (mStop_)
+          break;
 
-      auto nPeek = std::min(mQueue_.size(), mThreshold_);
-      auto it = mQueue_.begin();
-      // XXX: pointer chaser, choose better solution
-      std::advance(it, nPeek);
-      snippet.clear();
-      snippet.splice(snippet.begin(), mQueue_, mQueue_.begin(), it);
-      // if (!mQueue_.empty()) Offline never empty
-      ctrl_.notify_one();
+        auto nPeek = std::min(mQueue_.size(), mThreshold_);
+        auto it = mQueue_.begin();
+        // XXX: pointer chaser, choose better solution
+        std::advance(it, nPeek);
+        snippet.clear();
+        snippet.splice(snippet.begin(), mQueue_, mQueue_.begin(), it);
+        // if (!mQueue_.empty()) Offline never empty
+        ctrl_.notify_one();
+      }
+
+      std::vector<mlperf::QuerySample> samples(snippet.begin(), snippet.end());
+      std::vector<mlperf::QuerySampleIndex> indices (samples.size());
+      std::transform(samples.cbegin(), samples.cend(), indices.begin(),
+          [](mlperf::QuerySample sample) {return sample.index;});
+      auto wav_stack = qsl_.AssembleSamples(std::move(indices));
+      auto results = preprocessor_.inference_at(which, wav_stack);
+      auto tList = qsl_.GetTensorListFrom(results);
+      auto tStack = at::stack(tList[0], -1);
+      QuerySamplesComplete(samples, tStack);
+      // auto results = model_.inference_at(which, fea_stack);
+      // QuerySamplesComplete(samples, results);
     }
-
-    std::vector<mlperf::QuerySample> samples(snippet.begin(), snippet.end());
-    std::vector<mlperf::QuerySampleIndex> indices (samples.size());
-    std::transform(samples.cbegin(), samples.cend(), indices.begin(),
-        [](mlperf::QuerySample sample) {return sample.index;});
-    auto wav_stack = qsl_.AssembleSamples(std::move(indices));
-    auto results = preprocessor_.inference_at(which, wav_stack);
-    auto tList = qsl_.GetTensorListFrom(results);
-    auto tStack = at::stack(tList[0], -1);
-    QuerySamplesComplete(samples, tStack);
-    // auto results = model_.inference_at(which, fea_stack);
-    // QuerySamplesComplete(samples, results);
   }
 }
 

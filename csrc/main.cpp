@@ -50,6 +50,12 @@ int main(int argc, char **argv) {
     ("a,accuracy", "Run test in accuracy mode instead of performance",
      cxxopts::value<bool>()->default_value("false"))
 
+    ("p,profiler", "Whether output trace json or not",
+     cxxopts::value<bool>()->default_value("false"))
+
+    ("f,profiler_folder", "If profiler is True, output json in profiler_folder",
+     cxxopts::value<std::string>()->default_value("logs"))
+
     ;
 
   auto parsed_opts = opts.parse(argc, argv);
@@ -66,6 +72,9 @@ int main(int argc, char **argv) {
   auto disable_ht = parsed_opts["disable-hyperthreading"].as<bool>();
   auto test_scenario = parsed_opts["test_scenario"].as<std::string>();
   auto accuracy_mode = parsed_opts["accuracy"].as<bool>();
+  auto profiler_flag = parsed_opts["profiler"].as<bool>();
+  auto profiler_folder = parsed_opts["profiler_folder"].as<std::string>();
+
 
   mlperf::TestSettings testSettings;
   mlperf::LogSettings logSettings;
@@ -74,7 +83,8 @@ int main(int argc, char **argv) {
   if (test_scenario == "Offline") {
     RNNTOfflineSUT sut(
 	model_file, sample_file, preprocessor_file,
-	inter_parallel, intra_parallel, batch_size, !disable_ht);
+	inter_parallel, intra_parallel, batch_size,
+	!disable_ht, profiler_flag, profiler_folder);
   
     testSettings.scenario = mlperf::TestScenario::Offline;
     testSettings.FromConfig(mlperf_conf, "rnnt", "Offline");
