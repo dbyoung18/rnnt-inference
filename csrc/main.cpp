@@ -20,7 +20,7 @@ int main(int argc, char **argv) {
     ("s,sample_file", "LibriSpeech Sample File",
      cxxopts::value<std::string>())
 
-    ("p,preprocessor_file", "Audio Preprocessor File",
+    ("preprocessor_file", "Audio Preprocessor File",
      cxxopts::value<std::string>())
 
     ("k,test_scenario", "Test scenario [Offline, Server]",

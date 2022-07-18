@@ -13,6 +13,7 @@ pushd ${HOME_DIR}
 
 echo '==> Building mlperf-loadgen'
 git clone --recurse-submodules https://github.com/mlcommons/inference.git
+git checkout r2.1
 pushd inference
 git checkout master
 git submodule sync

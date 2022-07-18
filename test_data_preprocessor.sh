@@ -7,6 +7,10 @@ export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:per
 : ${SCENARIO=${1:-"Offline"}}
 : ${ACCURACY=${2:-""}}
 : ${DEBUG:=false}
+: ${PROFILE:=false}
+: ${INTER:=1}
+: ${INTRA:=56}
+: ${BATCH_SIZE:=128}
 
 SUT_DIR=$(pwd)
 EXECUTABLE=${SUT_DIR}/build/rnnt_inference
@@ -15,9 +19,9 @@ OUT_DIR="${WORK_DIR}/logs/${SCENARIO}"
 mkdir -p ${OUT_DIR} ${WORK_DIR}
 
 if [[ ${SCENARIO} == "Offline" ]]; then
-  num_instance=1
-  core_per_instance=56
-  batch_size=32
+  num_instance=${INTER}
+  core_per_instance=${INTRA}
+  batch_size=${BATCH_SIZE}
 elif [[ ${SCENARIO} == "Server" ]]; then
   num_instance=1
   core_per_instance=56
@@ -34,7 +38,9 @@ SCRIPT_ARGS+=" --output_dir=${OUT_DIR}"
 SCRIPT_ARGS+=" --inter_parallel=${num_instance}"
 SCRIPT_ARGS+=" --intra_parallel=${core_per_instance}"
 SCRIPT_ARGS+=" --batch_size=${batch_size}"
-SCRIPT_ARGS+=" --accuracy"
+# SCRIPT_ARGS+=" --accuracy"
+
+[ ${PROFILE} == true ] && SCRIPT_ARGS+=" --profiler"
 
 [ ${DEBUG} == "gdb" ] && EXEC_ARGS="gdb --args"
 [ ${DEBUG} == "lldb" ] && EXEC_ARGS="lldb --"
