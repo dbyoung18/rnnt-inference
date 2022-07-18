@@ -36,7 +36,8 @@ class GreedyDecoder(torch.nn.Module):
         batch_size = f_lens.size(0)
         res = [[] for i in range(batch_size)]
         eos_idxs = (f_lens - 1).to(torch.int64)
-        time_idxs = torch.zeros(batch_size, dtype=torch.int64)
+        time_idxs = symbols_added = torch.zeros(batch_size, dtype=torch.int64)
+        reach_max_idxs = torch.tensor([False]*batch_size)
         fi = f[0]
         pre_g = torch.zeros((1, batch_size), dtype=torch.int64)
         pre_hg = torch.zeros((RNNTParam.pred_num_layers, batch_size, RNNTParam.pred_hidden_size))
@@ -46,26 +47,28 @@ class GreedyDecoder(torch.nn.Module):
             g, (hg, cg) = self.rnnt.prediction(pre_g, (pre_hg, pre_cg))
             y = self.rnnt.joint(fi, g[0])
             symbols = torch.argmax(y, dim=1)
-            # update res
+            # update res & g
             no_blank_idxs = symbols.ne(RNNTParam.BLANK)
             if torch.count_nonzero(no_blank_idxs) != 0:
                 for i in range(batch_size):
                     if no_blank_idxs[i] == True:
                         res[i].append(symbols[i].item())
-            # update g
-            if torch.count_nonzero(no_blank_idxs) != 0:
+                symbols_added += no_blank_idxs
+                reach_max_idxs = symbols_added.eq(RNNTParam.max_symbols)
+
                 pre_g[0][no_blank_idxs] = symbols[no_blank_idxs]
                 pre_hg[:, no_blank_idxs, :] = hg[:, no_blank_idxs, :]
                 pre_cg[:, no_blank_idxs, :] = cg[:, no_blank_idxs, :]
             # update f
-            if torch.count_nonzero(no_blank_idxs) != batch_size:
-                time_idxs += ~no_blank_idxs
+            if torch.count_nonzero(no_blank_idxs) != batch_size or torch.count_nonzero(reach_max_idxs) != 0:
+                time_idxs += (~no_blank_idxs | reach_max_idxs)
                 time_idxs = time_idxs.min(eos_idxs)  # TODO: add early response
                 if torch.equal(time_idxs, eos_idxs):
                     break
                 fetch_idxs = time_idxs.unsqueeze(1).unsqueeze(0).expand(
                     1, batch_size, RNNTParam.trans_hidden_size)
                 fi = f.gather(0, fetch_idxs).squeeze(0)
+                symbols_added *= no_blank_idxs
         return res
 
 
