@@ -89,8 +89,11 @@ void RNNTOfflineSUT::thInstance(int index) {
         [](mlperf::QuerySample sample) {return sample.index;});
     auto wav_stack = qsl_.AssembleSamples(std::move(indices));
     auto results = preprocessor_.inference_at(which, wav_stack);
+    auto tList = qsl_.GetTensorListFrom(results);
+    auto tStack = at::stack(tList[0], -1);
+    QuerySamplesComplete(samples, tStack);
     // auto results = model_.inference_at(which, fea_stack);
-    QuerySamplesComplete(samples, results);
+    // QuerySamplesComplete(samples, results);
   }
 }
 
@@ -111,6 +114,19 @@ void RNNTOfflineSUT::QuerySamplesComplete(
     responses[i].id = samples[i].id;
     responses[i].data = reinterpret_cast<uintptr_t>(results[i].data());
     responses[i].size = results[i].size()*sizeof(int64_t);
+  }
+  mlperf::QuerySamplesComplete(responses.data(), responses.size());
+}
+
+void RNNTOfflineSUT::QuerySamplesComplete(
+    const std::vector<mlperf::QuerySample>& samples,
+    const at::Tensor& results) {
+  std::vector<mlperf::QuerySampleResponse> responses(samples.size());
+
+  for (size_t i = 0; i < samples.size(); ++i) {
+    responses[i].id = samples[i].id;
+    responses[i].data = reinterpret_cast<uintptr_t>(results[i].data_ptr());
+    responses[i].size = results[i].nbytes();
   }
   mlperf::QuerySamplesComplete(responses.data(), responses.size());
 }

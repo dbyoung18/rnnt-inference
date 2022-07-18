@@ -142,12 +142,10 @@ class FilterbankFeatures(nn.Module):
         return seq_len
 
     @torch.no_grad()
-    def forward(self, inp: Tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
-        x, seq_len = inp
-
+    def forward(self, x: torch.Tensor, x_lens: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         dtype = x.dtype
 
-        seq_len = self.get_seq_len(seq_len)
+        x_lens = self.get_seq_len(x_lens)
 
         # dither
         if self.dither > 0 and not self.use_deterministic_dithering:
@@ -188,22 +186,22 @@ class FilterbankFeatures(nn.Module):
         # normalize if required
         constant = 1e-5
         if self.normalize == "per_feature":
-            x_mean = torch.zeros((seq_len.shape[0], x.shape[1]), dtype=x.dtype,
+            x_mean = torch.zeros((x_lens.shape[0], x.shape[1]), dtype=x.dtype,
                                  device=x.device)
-            x_std = torch.zeros((seq_len.shape[0], x.shape[1]), dtype=x.dtype,
+            x_std = torch.zeros((x_lens.shape[0], x.shape[1]), dtype=x.dtype,
                                 device=x.device)
             for i in range(x.shape[0]):
-                x_mean[i, :] = x[i, :, :seq_len[i]].mean(dim=1)
-                x_std[i, :] = x[i, :, :seq_len[i]].std(dim=1)
+                x_mean[i, :] = x[i, :, :x_lens[i]].mean(dim=1)
+                x_std[i, :] = x[i, :, :x_lens[i]].std(dim=1)
                 # make sure x_std is not zero
                 x_std += constant
             x = (x - x_mean.unsqueeze(2)) / x_std.unsqueeze(2)
         elif self.normalize == "all_features":
-            x_mean = torch.zeros(seq_len.shape, dtype=x.dtype, device=x.device)
-            x_std = torch.zeros(seq_len.shape, dtype=x.dtype, device=x.device)
+            x_mean = torch.zeros(x_lens.shape, dtype=x.dtype, device=x.device)
+            x_std = torch.zeros(x_lens.shape, dtype=x.dtype, device=x.device)
             for i in range(x.shape[0]):
-                x_mean[i] = x[i, :, :seq_len[i].item()].mean()
-                x_std[i] = x[i, :, :seq_len[i].item()].std()
+                x_mean[i] = x[i, :, :x_lens[i].item()].mean()
+                x_std[i] = x[i, :, :x_lens[i].item()].std()
                 # make sure x_std is not zero
                 x_std += constant
             x = (x - x_mean.view(-1, 1, 1)) / x_std.view(-1, 1, 1)
@@ -214,7 +212,7 @@ class FilterbankFeatures(nn.Module):
 
         # mask to zero any values beyond seq_len in batch, pad to multiple of `pad_to` (for efficiency)
         # max_len = x.size(-1)
-        x = x[:, :, :seq_len.max()]   # rnnt loss requires lengths to match
+        x = x[:, :, :x_lens.max()]   # rnnt loss requires lengths to match
         # mask = torch.arange(max_len).to(seq_len.dtype).to(x.device).expand(x.size(0),
         #                                                                   max_len) >= seq_len.unsqueeze(1)
 
@@ -229,7 +227,7 @@ class FilterbankFeatures(nn.Module):
         #    if pad_amt != 0:
         #        x = nn.functional.pad(x, (0, pad_to - pad_amt))
 
-        return x.to(dtype)
+        return x.to(dtype), x_lens
 
     @classmethod
     def from_config(cls, cfg, log=False):

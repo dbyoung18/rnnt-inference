@@ -38,7 +38,7 @@ class PytorchSUT:
                 [self.qsl[idx][0] for idx in batch_idx], batch_first=True)
             wav_lens = torch.tensor(
                 [self.qsl[idx][1] for idx in batch_idx])
-            feas, fea_lens = self.audio_preprocessor((wavs, wav_lens))
+            feas, fea_lens = self.audio_preprocessor(wavs, wav_lens)
             feas = feas.permute(2, 0, 1)
         else:
             feas = torch.nn.utils.rnn.pad_sequence(

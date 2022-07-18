@@ -6,7 +6,6 @@
 #include <unistd.h>
 
 #include "cxxopts.hpp"
-#include "rnnt_qsl.hpp"
 #include "torch_sut.hpp"
 #include "test_settings.h"
 

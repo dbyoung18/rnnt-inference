@@ -17,8 +17,8 @@ class RNNTQuerySampleLibrary : public QuerySampleLibrary {
 public:
   RNNTQuerySampleLibrary(
       const std::string& filename,
-      const char* feas_name = "feas",
-      const char* fea_lens_name = "fea_lens");
+      const char* feas_name = "wavs",
+      const char* fea_lens_name = "wav_lens");
 
   RNNTQuerySampleLibrary(
       const std::string& f_feas,
@@ -58,14 +58,21 @@ public:
   Stack AssembleSamples(std::vector<QuerySampleIndex> indices) const;
 
   // List of tensor of 1d
-  size_t GetFeatureLength(size_t index) const {
+  // size_t GetFeatureLength(size_t index) const {
+    // return feas_set_[index].size(0);
+  // }
+
+  // List of tensor of 1d
+  size_t GetFeatureLength(QuerySampleIndex index) const {
     return feas_set_[index].size(0);
   }
 
   // Sort LibriSpeech data for batching
+  // wav_lens: 23120 -> 239920
+  // fea_lens: 49 -> 500
   Queue_t Sort(
       const std::vector<QuerySample>& samples, bool reverse = true,
-      size_t minLength=49, size_t maxLength=500) const;
+      size_t minLength=23120, size_t maxLength=239920) const;
 
   c10::Dict<at::IValue, at::IValue> GetDictFrom(const std::string& filename);
 

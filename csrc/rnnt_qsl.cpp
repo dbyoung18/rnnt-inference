@@ -154,7 +154,7 @@ Stack RNNTQuerySampleLibrary::AssembleSamples(
 
     auto len = feas.size(0);
     if (len < maxLength) {  // Padding needed
-      std::vector<int64_t> newShape {maxLength, feas.size(1)};
+      std::vector<int64_t> newShape {maxLength};
 
       auto opts = at::TensorOptions().dtype<int>().memory_format(at::MemoryFormat::Contiguous);
 
@@ -166,9 +166,8 @@ Stack RNNTQuerySampleLibrary::AssembleSamples(
     }
      fea_lens_list.emplace_back(fea_lens);
   }
-  auto feas = at::stack(feas_list, 1);  // {T, N, C}
+  auto feas = at::stack(feas_list, 0);  // {N, T}
   auto fea_lens = at::cat(fea_lens_list);
-  // std::cout << "--fea_lens:" << fea_lens << std::endl;
   return Stack {feas, fea_lens};
 }
 

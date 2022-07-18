@@ -52,6 +52,11 @@ public:
       const std::vector<std::vector<int64_t>>& results
   );
 
+  static void QuerySamplesComplete(
+      const std::vector<mlperf::QuerySample>& samples,
+      const at::Tensor& results
+  );
+
   static std::string SequenceToString(const std::vector<int64_t>& seq);
 
   mlperf::QuerySampleLibrary* GetQSL() {
@@ -61,7 +66,7 @@ public:
 private:
   qsl::RNNTQuerySampleLibrary qsl_;
   models::TorchModel model_;
-  models::TorchModel preprocessor_;
+  models::AudioPreprocessor preprocessor_;
 
   std::condition_variable ctrl_;
   std::mutex mtx_;
@@ -71,7 +76,6 @@ private:
 
   // Control over max samples a instance will peek
   size_t mThreshold_;
-  size_t slength_ {500};
 
   std::vector<std::thread> mInstances_;
   int nProcsPerInstance_;
