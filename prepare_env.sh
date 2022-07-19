@@ -45,7 +45,7 @@ echo '==> Building pytorch'
 git clone https://github.com/pytorch/pytorch.git
 pushd pytorch
 git checkout v1.12.0
-git apply patches/pytorch_official_1_12.patch
+git apply ../patches/pytorch_official_1_12.patch
 git submodule sync
 git submodule update --init --recursive
 pip install -r requirements.txt
@@ -53,6 +53,7 @@ USE_CUDA=OFF python -m pip install -e .
 popd
 
 echo '==> Building mlperf_plugins, C++ loadgen & SUT'
+rm ${CONDA_PREFIX}/lib/cmake/mkl/*
 git submodule sync
 git submodule update --init --recursive
 mkdir build
