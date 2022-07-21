@@ -47,8 +47,8 @@ class GreedyDecoder(torch.nn.Module):
             g, (hg, cg) = self.rnnt.prediction(pre_g, (pre_hg, pre_cg))
             y = self.rnnt.joint(fi, g[0])
             symbols = torch.argmax(y, dim=1)
-            # update res & g
             no_blank_idxs = symbols.ne(RNNTParam.BLANK)
+            # update res & g
             if torch.count_nonzero(no_blank_idxs) != 0:
                 for i in range(batch_size):
                     if no_blank_idxs[i] == True:
@@ -93,14 +93,6 @@ class RNNT(torch.nn.Module):
             self.load_state_dict(state_dict, strict=False)
             self.transcription.pre_rnn._init_quantizers()
             self.transcription.post_rnn._init_quantizers()
-
-    def _init_scales(self, calib_path):
-        calib_dict = parse_calib(calib_path)
-        for layer in range(RNNTParam.pre_num_layers):
-            self.transcription.pre_rnn._input_quantizers[layer]._scale = 1 / calib_dict["input"]
-    
-        for layer in range(RNNTParam.post_num_layers):
-            self.transcription.post_rnn._input_quantizers[layer]._scale = 1 / calib_dict["encoder_reshape"]
 
 
 class Transcription(torch.nn.Module):
@@ -174,9 +166,8 @@ class Joint(torch.nn.Module):
 
     def forward(self, f: torch.Tensor, g: torch.Tensor) -> torch.Tensor:
         if self.split_fc1:
-            f = self.linear1_trans(f)
-            g = self.linear1_pred(g)
-            y1 = f + g
+            y1 = self.linear1_trans(f)
+            y1 += self.linear1_pred(g)
         else:
             x = torch.cat([f, g], dim=1)
             y1 = self.linear1(x)

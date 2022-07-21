@@ -31,10 +31,10 @@ SCRIPT_ARGS+=" --toml_path ${PWD}/configs/rnnt.toml"
 SCRIPT_ARGS+=" --split_fc1"
 SCRIPT_ARGS+=" --enable_preprocess"
 SCRIPT_ARGS+=" --accuracy"
-[ ${MODE} != "f32" ] && SCRIPT_ARGS+=" --run_mode ${MODE} --calib_path ${PWD}/tests/calibration_result_nv.cache"
 [ ${JIT} == true ] && SCRIPT_ARGS+=" --jit"
 [ ${DEBUG} == "pdb" ] && EXEC_ARGS="ipdb3"
 [ ${DEBUG} == "gdb" ] && EXEC_ARGS="gdb --args python"
+[ ${DEBUG} == "lldb" ] && EXEC_ARGS="lldb python --"
 [ ${DEBUG} == false ] && EXEC_ARGS="python -u"
 
 ${EXEC_ARGS} models/main.py ${SCRIPT_ARGS}

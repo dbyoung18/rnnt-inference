@@ -25,6 +25,9 @@ def migrate_state_dict(model, split_fc1=False):
             migrated_state_dict["joint.linear1_trans.weight"] = value[:, : 1024]
             migrated_state_dict["joint.linear1_pred.weight"] = value[:, 1024 : ]
             continue
+        if key == "joint_net.0.bias" and split_fc1:
+            migrated_state_dict["joint.linear1_trans.bias"] = torch.zeros(512)
+            migrated_state_dict["joint.linear1_pred.bias"] = value
         key = key.replace("encoder.pre_rnn.lstm", "transcription.pre_rnn")
         key = key.replace("encoder.post_rnn.lstm", "transcription.post_rnn")
         key = key.replace("dec_rnn.lstm", "pred_rnn")
@@ -45,12 +48,11 @@ def jit_module(module):
     torch._C._jit_pass_constant_propagation(fmodule.graph)
     return fmodule
 
-def jit_model(model, model_path):
+def jit_model(model):
     model.transcription = jit_module(model.transcription)
     model.prediction = jit_module(model.prediction)
     model.joint = jit_module(model.joint)
     model = torch.jit.script(model)
-    torch.jit.save(model, model_path)
     return model
 
 def parse_calib(calib_path):

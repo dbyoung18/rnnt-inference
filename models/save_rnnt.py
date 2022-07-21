@@ -29,17 +29,16 @@ def main():
     sut = PytorchSUT(model, qsl, args.batch_size)
     print("==> Freezing model...")
     # quant & prepack
-    calib_model_path = os.path.join(os.path.dirname(args.model_path), "rnnt_calib.pt")
-    sut.model.rnnt = RNNT(calib_model_path, run_mode="quant").eval()
     results = sut.inference(range(0, args.batch_size))
     for i in range(len(results)):
         logger.debug(f"{i}::{seq_to_sen(results[i])}")
     quant_model_path = os.path.join(os.path.dirname(args.model_path), "rnnt_quant.pt")
     torch.save(sut.model.rnnt.state_dict(), quant_model_path) 
     # jit
-    sut.model.rnnt = jit_model(sut.model.rnnt)
-    jit_model_path = os.path.join(os.path.dirname(args.model_path), "rnnt_jit.pt")
-    torch.save(sut.model.rnnt.state_dict(), jit_model_path)
+    if args.jit:
+        sut.model.rnnt = jit_model(sut.model.rnnt)
+        jit_model_path = os.path.join(os.path.dirname(args.model_path), "rnnt_jit.pt")
+        torch.save(sut.model.rnnt.state_dict(), jit_model_path)
 
 if __name__ == "__main__":
     main()

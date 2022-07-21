@@ -285,13 +285,9 @@ class QuantLSTM(nn.LSTM):
         """
         if input_quantizer != None and self.run_mode != None:
             xt, ht_1 = input_quantizer(torch.cat([xt, ht_1], 1)).split([xt.size(1), ht_1.size(1)], 1)
-        # if weight_quantizer != None and self.run_mode != None and self.run_mode != "calib":
-            # w_ih, w_hh = weight_quantizer(torch.cat([w_ih, w_hh], 1)).split([w_ih.size(1), w_hh.size(1)], 1)
-            # weight_quantizer.scale = weight_quantizer._max_bound / torch.max(torch.cat([w_ih, w_hh], 1))
-            # w_ih = weight_quantizer(w_ih)
-            # w_hh = weight_quantizer(w_hh)
 
-        gates = F.linear(xt, w_ih, b_ih) + F.linear(ht_1, w_hh, b_hh)
+        gates = F.linear(xt, w_ih, b_ih)
+        gates += F.linear(ht_1, w_hh, b_hh)
         it, ft, gt, ot = gates.chunk(4, 1)
         it = torch.sigmoid(it)
         ft = torch.sigmoid(ft)

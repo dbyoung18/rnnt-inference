@@ -27,14 +27,28 @@ class LSTM(QuantLSTM):
         hy_list, cy_list = [], []
         for layer in range(self.num_layers):
             layer_hx, layer_cx = hx[layer], cx[layer]
-            (w_ih, w_hh, b_ih, b_hh) = self.all_weights[layer][:]
             input_quantizer = self._input_quantizers[layer]
             weight_quantizer = self._weight_quantizers[layer]
+            weight_quantizer.amax = torch.max(
+                torch.cat([self.all_weights[layer][0], self.all_weights[layer][1]], 1).abs())
+            weight_quantizer.scale = weight_quantizer._max_bound / weight_quantizer.amax
+            weight_quantizer._mode = "quant"
+            b_scale = input_quantizer.scale * weight_quantizer.scale
+            o_scale = 1 / b_scale
+            setattr(self, f"weight_ih_l{layer}",
+                Parameter(weight_quantizer(self.all_weights[layer][0]), requires_grad=False))
+            setattr(self, f"weight_hh_l{layer}",
+                Parameter(weight_quantizer(self.all_weights[layer][1]), requires_grad=False))
+            setattr(self, f"bias_ih_l{layer}",
+                Parameter(self.all_weights[layer][2]*b_scale, requires_grad=False))
+            setattr(self, f"bias_hh_l{layer}",
+                Parameter(self.all_weights[layer][3]*b_scale, requires_grad=False))
 
             layer_x, (layer_hx, layer_cx) = self.lstm_layer(
                 layer_x, layer_hx, layer_cx,
-                w_ih, w_hh, b_ih, b_hh,
-                input_quantizer, weight_quantizer, layer)
+                self.all_weights[layer][0], self.all_weights[layer][1],
+                self.all_weights[layer][2], self.all_weights[layer][3],
+                o_scale, layer)
 
             hy_list.append(layer_hx)
             cy_list.append(layer_cx)
@@ -47,22 +61,17 @@ class LSTM(QuantLSTM):
     def lstm_layer(self, x: Tensor, hx: Tensor, cx: Tensor,
             w_ih: Tensor, w_hh: Tensor,
             b_ih: Tensor=None, b_hh: Tensor=None,
-            input_quantizer=None, weight_quantizer=None, layer=0):
-        weight_quantizer.scale = weight_quantizer._max_bound / torch.max(torch.cat([w_ih, w_hh], 1))
-        weight_quantizer._mode = "quant"
-        w_ih = weight_quantizer(w_ih)
-        w_hh = weight_quantizer(w_hh)
-        bias_scale = input_quantizer.scale * weight_quantizer.scale
-        o_scale = 1 / bias_scale
+            o_scale=None, layer=0):
         y_list = []
         for step in range(x.size(0)):
-            hx, cx = self.lstm_cell(
+            y, hx, cx = self.lstm_cell(
                 x[step], hx, cx,
                 w_ih, w_hh, b_ih, b_hh,
                 o_scale)
+            hx = self._input_quantizers[layer](hx)
             if layer != self.num_layers - 1:
-                hx = input_quantizer(hx)
-            y_list.append(hx)
+                y = self._input_quantizers[layer+1](y)
+            y_list.append(y)
         y = torch.stack(y_list, 0)
         return y, (hx, cx)
 
@@ -95,5 +104,5 @@ class LSTM(QuantLSTM):
         ot = torch.sigmoid(ot)
         ct = (ft * ct_1) + (it * gt)
         ht = ot * torch.tanh(ct)
-        return ht, ct
+        return ht, ht, ct
 

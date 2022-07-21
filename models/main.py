@@ -28,7 +28,6 @@ def parse_args():
     parser.add_argument("--model_path", type=str, default="work_dir/rnnt.pt")
     parser.add_argument("--manifest_path", type=str, required=True)
     parser.add_argument("--dataset_dir", type=str, required=True)
-    parser.add_argument("--calib_path", type=str, default=None)
     parser.add_argument("--log_dir", type=str, required=True)
     parser.add_argument("--run_mode", default=None,
         choices=[None, "calib", "quant", "fake_quant"], help="run_mode, default fp32")
