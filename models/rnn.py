@@ -6,7 +6,7 @@ import _C as P
 from torch import Tensor
 from torch.nn.parameter import Parameter
 from torch.nn import functional as F
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 from quant_modules import *
 
 
@@ -14,65 +14,63 @@ class LSTM(QuantLSTM):
     def __init__(self, input_size, hidden_size, num_layers, **kwargs):
         super(LSTM, self).__init__(input_size, hidden_size, num_layers, **kwargs)
 
-    def forward(self, input: Tensor, state: Optional[Tuple[Tensor, Tensor]]=None):
+    def _init_weights(self):
+        self.weights : List[Tensor] = self.all_weights
+
+    def quant_params(self, layer: int,
+            input_quantizer: TensorQuantizer, weight_quantizer: WeightQuantizer) -> List[Tensor]:
+        w_ih, w_hh, b_ih, b_hh = self.weights[layer][:]
+        weight_quantizer.amax = torch.max(torch.cat([w_ih, w_hh], 1).abs())
+        weight_quantizer.scale = weight_quantizer._max_bound / weight_quantizer.amax
+        b_scale = input_quantizer.scale * weight_quantizer.scale
+        o_scale = 1 / b_scale
+        self.weights[layer][0] = weight_quantizer._quant_forward(w_ih)
+        self.weights[layer][1] = weight_quantizer._quant_forward(w_hh)
+        self.weights[layer][2] = b_ih*b_scale
+        self.weights[layer][3] = b_hh*b_scale
+        return self.weights[layer][0], self.weights[layer][1], self.weights[layer][2], self.weights[layer][3], o_scale
+
+    def forward(self, x: Tensor, state: Optional[Tuple[Tensor, Tensor]]=None):
         if state is None:
-            hx = cx = torch.zeros(self.num_layers, input.size(1), self.hidden_size,
-                                  dtype=input.dtype, device=input.device, requires_grad=False)
+            hx = torch.zeros(self.num_layers, x.size(1), self.hidden_size, dtype=x.dtype)
+            cx = torch.zeros(self.num_layers, x.size(1), self.hidden_size, dtype=torch.float32)
         else:
             (hx, cx) = state[:]
 
-        if input.dtype == torch.float32:
-            layer_x = self._input_quantizers[0](input.contiguous())
-            hx = self._input_quantizers[0](hx.contiguous())
         hy_list, cy_list = [], []
         for layer in range(self.num_layers):
+            input_quantizer : TensorQuantizer = self._input_quantizers[layer]
+            weight_quantizer : WeightQuantizer = self._weight_quantizers[layer]
             layer_hx, layer_cx = hx[layer], cx[layer]
-            input_quantizer = self._input_quantizers[layer]
-            weight_quantizer = self._weight_quantizers[layer]
-            weight_quantizer.amax = torch.max(
-                torch.cat([self.all_weights[layer][0], self.all_weights[layer][1]], 1).abs())
-            weight_quantizer.scale = weight_quantizer._max_bound / weight_quantizer.amax
-            weight_quantizer._mode = "quant"
-            b_scale = input_quantizer.scale * weight_quantizer.scale
-            o_scale = 1 / b_scale
-            setattr(self, f"weight_ih_l{layer}",
-                Parameter(weight_quantizer(self.all_weights[layer][0]), requires_grad=False))
-            setattr(self, f"weight_hh_l{layer}",
-                Parameter(weight_quantizer(self.all_weights[layer][1]), requires_grad=False))
-            setattr(self, f"bias_ih_l{layer}",
-                Parameter(self.all_weights[layer][2]*b_scale, requires_grad=False))
-            setattr(self, f"bias_hh_l{layer}",
-                Parameter(self.all_weights[layer][3]*b_scale, requires_grad=False))
-
-            layer_x, (layer_hx, layer_cx) = self.lstm_layer(
-                layer_x, layer_hx, layer_cx,
-                self.all_weights[layer][0], self.all_weights[layer][1],
-                self.all_weights[layer][2], self.all_weights[layer][3],
+            w_ih, w_hh, b_ih, b_hh, o_scale = self.quant_params(layer, input_quantizer, weight_quantizer)
+            x, (layer_hx, layer_cx) = self.lstm_layer(
+                x, layer_hx, layer_cx,
+                w_ih, w_hh, b_ih, b_hh,
                 o_scale, layer)
-
             hy_list.append(layer_hx)
             cy_list.append(layer_cx)
 
-        y = layer_x
         hy = torch.stack(hy_list, 0)
         cy = torch.stack(cy_list, 0)
-        return y, (hy, cy)
+        return x, (hy, cy)
 
     def lstm_layer(self, x: Tensor, hx: Tensor, cx: Tensor,
             w_ih: Tensor, w_hh: Tensor,
             b_ih: Tensor=None, b_hh: Tensor=None,
-            o_scale=None, layer=0):
+            o_scale=None, layer: int=0):
         y_list = []
         for step in range(x.size(0)):
             y, hx, cx = self.lstm_cell(
                 x[step], hx, cx,
                 w_ih, w_hh, b_ih, b_hh,
                 o_scale)
-            hx = self._input_quantizers[layer](hx)
-            if layer != self.num_layers - 1:
-                y = self._input_quantizers[layer+1](y)
+            input_quantizer: TensorQuantizer = self._input_quantizers[layer]
+            hx = input_quantizer._quant_forward(hx)
             y_list.append(y)
         y = torch.stack(y_list, 0)
+        if layer != self.num_layers - 1:  # TODO: quant laster layer
+            next_quantizer: TensorQuantizer = self._input_quantizers[layer+1]
+            y = next_quantizer._quant_forward(y)
         return y, (hx, cx)
 
     def lstm_cell(self, xt: Tensor, ht_1: Tensor, ct_1: Tensor,

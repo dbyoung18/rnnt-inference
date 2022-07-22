@@ -3,6 +3,7 @@ from torch.nn import Linear
 from rnn import LSTM
 from typing import List, Tuple
 from utils import *
+from quant_modules import TensorQuantizer
 
 
 class RNNTParam:
@@ -75,53 +76,58 @@ class GreedyDecoder(torch.nn.Module):
 class RNNT(torch.nn.Module):
     def __init__(self, model_path=None, run_mode=None, split_fc1=False):
         super().__init__()
-        self.transcription = Transcription(run_mode)
-        self.prediction = Prediction(run_mode)
+        self.transcription = Transcription()
+        self.prediction = Prediction()
         self.joint = Joint(split_fc1)
         if model_path is not None:
             saved_quantizers = False if run_mode == None or run_mode == "calib" else True
-            self._load_model(model_path, saved_quantizers, split_fc1)
+            self._load_model(model_path, run_mode, saved_quantizers, split_fc1)
 
-    def _load_model(self, model_path, saved_quantizers=False, split_fc1=False):
+    def _load_model(self, model_path, run_mode=None, saved_quantizers=False, split_fc1=False):
         model = torch.load(model_path, map_location="cpu")
         state_dict = migrate_state_dict(model, split_fc1)
         if saved_quantizers:
-            self.transcription.pre_rnn._init_quantizers()
-            self.transcription.post_rnn._init_quantizers()
+            self.transcription.pre_rnn._init_quantizers(run_mode)
+            self.transcription.post_rnn._init_quantizers(run_mode)
             self.load_state_dict(state_dict, strict=False)
         else:
             self.load_state_dict(state_dict, strict=False)
-            self.transcription.pre_rnn._init_quantizers()
-            self.transcription.post_rnn._init_quantizers()
+            self.transcription.pre_rnn._init_quantizers(run_mode)
+            self.transcription.post_rnn._init_quantizers(run_mode)
+        self.transcription.pre_rnn._init_weights()
+        self.transcription.post_rnn._init_weights()
 
 
 class Transcription(torch.nn.Module):
-    def __init__(self, run_mode=None, **kwargs):
+    def __init__(self, **kwargs):
         super().__init__()
         self.pre_rnn = LSTM(
             RNNTParam.trans_input_size,
             RNNTParam.trans_hidden_size,
             RNNTParam.pre_num_layers,
-            run_mode=run_mode
         )
         self.stack_time = StackTime(RNNTParam.stack_time_factor)
         self.post_rnn = LSTM(
             RNNTParam.trans_hidden_size*RNNTParam.stack_time_factor,
             RNNTParam.trans_hidden_size,
             RNNTParam.post_num_layers,
-            run_mode=run_mode
         )
 
     def forward(self, x: torch.Tensor,
             x_lens: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        pre_quantizer: TensorQuantizer = self.pre_rnn._input_quantizers[0]
+        x = pre_quantizer._quant_forward(x)
         y1, _ = self.pre_rnn(x, None)
+        # TODO: eliminate contiguous after stack_time
         y2, f_lens = self.stack_time(y1, x_lens)
+        post_quantizer: TensorQuantizer = self.post_rnn._input_quantizers[0]
+        y2 = post_quantizer._quant_forward(y2.contiguous())
         f, _ = self.post_rnn(y2, None)
         return f, f_lens
 
 
 class Prediction(torch.nn.Module):
-    def __init__(self, run_mode=None, **kwargs):
+    def __init__(self, **kwargs):
         super().__init__()
         self.embed = torch.nn.Embedding(
             RNNTParam.num_labels-1,
