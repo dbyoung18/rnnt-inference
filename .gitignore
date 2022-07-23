@@ -3,9 +3,10 @@
 **/cscope.*/*
 build/
 inference/
+llvm-project/
+mlperf-rnnt-librispeech
 pytorch/
 third_party/
-mlperf-rnnt-librispeech
 **/*.csv
 **/*.log
 **/*.pt

@@ -6,10 +6,25 @@ CONDA_ENV=${1:-'rnnt-infer'}
 HOME_DIR=${2:-${PWD}}
 
 echo '==> Creating conda env'
-conda env create -n ${CONDA_ENV} -f environment.yml --force -v
+# conda env create -n ${CONDA_ENV} -f environment.yml --force -v
+conda env create -n ${CONDA_ENV}
 conda activate ${CONDA_ENV}
 
 pushd ${HOME_DIR}
+
+# use gcc-9 compile clang-15
+echo '==> Building clang-15'
+git clone https://github.com/llvm/llvm-project.git
+pushd llvm-project
+git checkout 8df54a6a03a6d07e3053eff9806b450ec9193772
+mkdir build
+pushd build
+export LD_LIBRARY_PATH=${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}
+cmake ../llvm -GNinja -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS="clang" -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;openmp" -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX -DCMAKE_SHARED_LINKER_FLAGS="-L$CONDA_PREFIX -Wl,-rpath,$CONDA_PREFIX"
+ninja
+ninja install
+popd
+popd
 
 echo '==> Building mlperf-loadgen'
 git clone --recurse-submodules https://github.com/mlcommons/inference.git
@@ -40,34 +55,36 @@ LDFLAGS="-L${third_party_dir}/lib" CFLAGS="-I${third_party_dir}/include" ./confi
 popd
 popd
 
-echo '==> Building pytorch'
+echo '==> Building pytorch with mkl'
 export MKL_DPCPP_ROOT=/opt/intel/oneapi/mkl/latest
 export LD_LIBRARY_PATH=${MKL_DPCPP_ROOT}/lib:${MKL_DPCPP_ROOT}/lib64/:${MKL_DPCPP_ROOT}/lib/intel64:${LD_LIBRARY_PATH}
 export LIBRARY_PATH=${MKL_DPCPP_ROOT}/lib:${MKL_DPCPP_ROOT}/lib64:${MKL_DPCPP_ROOT}/lib/intel64:${LIBRARY_PATH}
+
 git clone https://github.com/pytorch/pytorch.git
 pushd pytorch
 git checkout v1.12.0
-git apply ../patches/pytorch_official_1_12.patch
+pip install setuptools==59.5.0
+pip install -r requirements.txt
 git submodule sync
 git submodule update --init --recursive
-pip install -r requirements.txt
-USE_CUDA=OFF python -m pip install -e .
+pushd third_party/ideep/mkl-dnn
+git apply ${HOME_DIR}/patches/clang_mkl_dnn.patch
+popd
+git apply ${HOME_DIR}/patches/pytorch_official_1_12.patch
+CC=clang CXX=clang++ USE_CUDA=OFF python -m pip install -e .
 popd
 
-echo '==> Building clang'
-./install_clang.sh
-
 echo '==> Building mlperf_plugins, C++ loadgen & SUT'
-rm ${CONDA_PREFIX}/lib/cmake/mkl/*
 git submodule sync
 git submodule update --init --recursive
 mkdir build
 pushd build
-# cmake -DBUILD_TPPS_INTREE=ON -DCMAKE_PREFIX_PATH="$(dirname $(python3 -c 'import torch; print(torch.__file__)'))" -GNinja -DUSERCP=ON -DCMAKE_BUILD_TYPE=Release ..
 cmake -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DBUILD_TPPS_INTREE=ON -DCMAKE_PREFIX_PATH="$(dirname $(python3 -c 'import torch; print(torch.__file__)'));../cmake/Modules" -GNinja -DUSERCP=ON -DCMAKE_BUILD_TYPE=Release ..
-
 ninja
 popd
+
+# delete MKL ERROR
+rm -rf ${CONDA_PREFIX}/lib/cmake/mkl/*
 
 set +x
 
