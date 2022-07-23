@@ -9,7 +9,7 @@ set -x
 : ${DEBUG:=false}
 : ${JIT:=false}
 
-export PYTHONPATH=${PWD}:${PYTHONPATH}
+export PYTHONPATH=${PWD}:${PWD}/models/:${PYTHONPATH}
 export RNNT_LOG_LEVEL=${LOG_LEVEL}
 
 SCRIPT_ARGS=" --batch_size ${BATCH_SIZE}"

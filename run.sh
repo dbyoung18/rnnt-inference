@@ -2,10 +2,10 @@
 
 set -x
 
-CONDA_ENV=${1:-'rnnt-infer'}
-WORK_DIR=${2:-${PWD}/mlperf-rnnt-librispeech}
-LOCAL_DATA_DIR=${WORK_DIR}/local_data
-STAGE=${3:-2}
+: ${CONDA_ENV=${1:-'rnnt-infer'}}
+: ${WORK_DIR=${2:-${PWD}/mlperf-rnnt-librispeech}}
+: ${LOCAL_DATA_DIR=${WORK_DIR}/local_data}
+: ${STAGE=${3:-2}}
 
 mkdir -p ${WORK_DIR}
 
@@ -34,11 +34,11 @@ if [[ ${STAGE} -le 2 ]]; then
   echo '==> Pre-processing dataset'
   export PATH="${PWD}/third_party/bin/:${PATH}"
   python datasets/convert_librispeech.py \
-    --input_dir=${LOCAL_DATA_DIR}/raw/dev-clean \
+    --input_dir=${LOCAL_DATA_DIR}/raw/LibriSpeech/dev-clean \
     --output_dir=${LOCAL_DATA_DIR}
 
   python datasets/convert_librispeech.py \
-    --input_dir=${LOCAL_DATA_DIR}/raw/train-clean-100 \
+    --input_dir=${LOCAL_DATA_DIR}/raw/LibriSpeech/train-clean-100 \
     --output_dir=${LOCAL_DATA_DIR} \
     --output_list=configs/calibration_files.txt
 fi
@@ -50,7 +50,7 @@ fi
 
 if [[ ${STAGE} -le 4 ]]; then
   echo '==> Building model'
-  ./save_model.sh 
+  JIT=true WAV=true ./save_model.sh
 fi
 
 if [[ ${STAGE} -le 5 ]]; then

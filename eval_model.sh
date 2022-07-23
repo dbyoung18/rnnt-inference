@@ -13,7 +13,7 @@ export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:per
 : ${WAV:=false}
 : ${JIT:=false}
 
-export PYTHONPATH=${PWD}:${PYTHONPATH}
+export PYTHONPATH=${PWD}:${PWD}/models/:${PYTHONPATH}
 export RNNT_LOG_LEVEL=${LOG_LEVEL}
 
 SCRIPT_ARGS=" --scenario ${SCENARIO}"
