@@ -1,6 +1,6 @@
 import torch
 from torch.nn import Linear
-from rnn import LSTM
+from rnn import QuantLSTM as LSTM
 from typing import List, Tuple
 from utils import *
 from quant_modules import TensorQuantizer
@@ -87,15 +87,20 @@ class RNNT(torch.nn.Module):
         model = torch.load(model_path, map_location="cpu")
         state_dict = migrate_state_dict(model, split_fc1)
         if saved_quantizers:
-            self.transcription.pre_rnn._init_quantizers(run_mode)
-            self.transcription.post_rnn._init_quantizers(run_mode)
+            self.transcription.pre_rnn._init_cells(run_mode)
+            self.transcription.post_rnn._init_cells(run_mode)
             self.load_state_dict(state_dict, strict=False)
         else:
             self.load_state_dict(state_dict, strict=False)
-            self.transcription.pre_rnn._init_quantizers(run_mode)
-            self.transcription.post_rnn._init_quantizers(run_mode)
-        self.transcription.pre_rnn._init_weights()
-        self.transcription.post_rnn._init_weights()
+            self.transcription.pre_rnn._init_cells(run_mode)
+            self.transcription.post_rnn._init_cells(run_mode)
+        self.transcription.pre_rnn._process_parameters(run_mode)
+        self.transcription.post_rnn._process_parameters(run_mode)
+        if run_mode == "quant":
+            self.transcription.pre_rnn._propagate_quantizers()
+            self.transcription.post_rnn._propagate_quantizers()
+            self.transcription.pre_quantizer = self.transcription.pre_rnn.lstm0.input_quantizer
+            self.transcription.post_quantizer = self.transcription.post_rnn.lstm0.input_quantizer
 
 
 class Transcription(torch.nn.Module):
@@ -115,13 +120,11 @@ class Transcription(torch.nn.Module):
 
     def forward(self, x: torch.Tensor,
             x_lens: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        pre_quantizer: TensorQuantizer = self.pre_rnn._input_quantizers[0]
-        x = pre_quantizer._quant_forward(x)
+        x = self.pre_quantizer(x)
         y1, _ = self.pre_rnn(x, None)
         # TODO: eliminate contiguous after stack_time
         y2, f_lens = self.stack_time(y1, x_lens)
-        post_quantizer: TensorQuantizer = self.post_rnn._input_quantizers[0]
-        y2 = post_quantizer._quant_forward(y2.contiguous())
+        y2 = self.post_quantizer(y2.contiguous())
         f, _ = self.post_rnn(y2, None)
         return f, f_lens
 
@@ -171,12 +174,8 @@ class Joint(torch.nn.Module):
         )
 
     def forward(self, f: torch.Tensor, g: torch.Tensor) -> torch.Tensor:
-        if self.split_fc1:
-            y1 = self.linear1_trans(f)
-            y1 += self.linear1_pred(g)
-        else:
-            x = torch.cat([f, g], dim=1)
-            y1 = self.linear1(x)
+        y1 = self.linear1_trans(f)
+        y1 += self.linear1_pred(g)
         y2 = self.relu(y1)
         y = self.linear2(y2)
         return y

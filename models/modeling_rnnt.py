@@ -1,6 +1,6 @@
 import torch
 from torch.nn import Linear
-from quant_modules import QuantLSTM as LSTM
+from rnn import QuantLSTM as LSTM
 from typing import List, Tuple
 from utils import *
 
@@ -86,13 +86,18 @@ class RNNT(torch.nn.Module):
         model = torch.load(model_path, map_location="cpu")
         state_dict = migrate_state_dict(model, split_fc1)
         if saved_quantizers:
-            self.transcription.pre_rnn._init_quantizers(run_mode)
-            self.transcription.post_rnn._init_quantizers(run_mode)
+            self.transcription.pre_rnn._init_cells(run_mode)
+            self.transcription.post_rnn._init_cells(run_mode)
             self.load_state_dict(state_dict, strict=False)
         else:
             self.load_state_dict(state_dict, strict=False)
-            self.transcription.pre_rnn._init_quantizers(run_mode)
-            self.transcription.post_rnn._init_quantizers(run_mode)
+            self.transcription.pre_rnn._init_cells(run_mode)
+            self.transcription.post_rnn._init_cells(run_mode)
+        self.transcription.pre_rnn._process_parameters(run_mode)
+        self.transcription.post_rnn._process_parameters(run_mode)
+        if run_mode == "quant":
+            self.transcription.pre_rnn._propagate_quantizers()
+            self.transcription.post_rnn._propagate_quantizers()
 
 
 class Transcription(torch.nn.Module):
