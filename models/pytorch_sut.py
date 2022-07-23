@@ -30,6 +30,7 @@ class PytorchSUT:
         self.model = GreedyDecoder(rnnt)
         self.batch_size = batch_size
         self.enable_preprocess = (self.preprocessor != None)
+        # create qsl & sut
         self.qsl = RNNTQSL(dataset_dir)
         self.sut = lg.ConstructSUT(self.issue_queries, self.flush_queries)
 

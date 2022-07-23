@@ -3,6 +3,8 @@ import numpy as np
 import os
 import torch
 
+from rnn import *
+
 
 LOG_LEVEL=int(os.environ['RNNT_LOG_LEVEL']) if 'RNNT_LOG_LEVEL' in os.environ else logging.INFO
 LOG_FORMAT="[%(filename)s:%(lineno)d %(levelname)s] %(message)s"
@@ -40,27 +42,27 @@ def migrate_state_dict(model, split_fc1=False):
         del migrated_state_dict["audio_preprocessor.featurizer.window"]
     return migrated_state_dict
 
-def jit_module(module):
-    jmodule = torch.jit.script(module)
-    fmodule = torch.jit._recursive.wrap_cpp_module(
-        torch._C._freeze_module(jmodule._c))
-    # fmodule = torch.jit.freeze(jmodule)
-    torch._C._jit_pass_constant_propagation(fmodule.graph)
-    return fmodule
+def jit_module(module, to_freeze=True):
+    module = torch.jit.script(module)
+    if to_freeze:
+        module = torch.jit._recursive.wrap_cpp_module(
+            torch._C._freeze_module(module._c))
+        # module = torch.jit.freeze(module)
+        torch._C._jit_pass_constant_propagation(module.graph)
+    return module
 
 def jit_model(model):
-    model.transcription.pre_quantizer = jit_module(model.transcription.pre_quantizer)
-    model.transcription.pre_rnn.lstm0 = jit_module(model.transcription.pre_rnn.lstm0)
-    model.transcription.pre_rnn.lstm1 = jit_module(model.transcription.pre_rnn.lstm1)
-    model.transcription.stack_time = jit_module(model.transcription.stack_time)
-    model.transcription.post_quantizer = jit_module(model.transcription.post_quantizer)
-    model.transcription.post_rnn.lstm0 = jit_module(model.transcription.post_rnn.lstm0)
-    model.transcription.post_rnn.lstm1 = jit_module(model.transcription.post_rnn.lstm1)
-    model.transcription.post_rnn.lstm2 = jit_module(model.transcription.post_rnn.lstm2)
-    model.transcription = jit_module(model.transcription)
+    for name, layer in model.transcription.named_children():
+        if isinstance(layer, QuantLSTM):
+            for sub_name, sub_layer in layer.named_children():
+                setattr(layer, f"{sub_name}", jit_module(sub_layer))
+            setattr(model.transcription, f"{name}", jit_module(layer, False))
+        else:
+            setattr(model.transcription, f"{name}", jit_module(layer))
+    model.transcription = jit_module(model.transcription, False)
     model.prediction = jit_module(model.prediction)
     model.joint = jit_module(model.joint)
-    #  model = torch.jit.script(model)
+    model = jit_module(model, False)
     return model
 
 def parse_calib(calib_path):
@@ -91,19 +93,4 @@ def save_calib(calib_path, model):
     with open(calib_path, 'w') as calib_file:
         json.dump(calib_dict, calib_file, indent=4)
     return calib_dict
-
-def init_scales(model, calib_path):
-    calib_dict = parse_calib(calib_path)
-    for layer in range(2):
-        model.transcription.pre_rnn._input_quantizers[layer]._scale = 1 / calib_dict["input"]
-
-    for layer in range(3):
-        model.transcription.post_rnn._input_quantizers[layer]._scale = 1 / calib_dict["encoder_reshape"]
-    
-    # model.transcription.pre_rnn._input_quantizers[0]._scale = 1 / calib_dict["input"]
-    # model.transcription.pre_rnn._input_quantizers[1]._scale = 127
-    # model.transcription.post_rnn._input_quantizers[0]._scale = 127
-    # model.transcription.post_rnn._input_quantizers[1]._scale = 127
-    # model.transcription.post_rnn._input_quantizers[2]._scale = 127
-    return model
 

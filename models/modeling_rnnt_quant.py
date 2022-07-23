@@ -118,6 +118,7 @@ class Transcription(torch.nn.Module):
             RNNTParam.post_num_layers,
         )
 
+    @torch.jit.ignore
     def forward(self, x: torch.Tensor,
             x_lens: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         x = self.pre_quantizer(x)
