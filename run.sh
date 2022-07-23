@@ -43,25 +43,21 @@ if [[ ${STAGE} -le 2 ]]; then
     --output_list=configs/calibration_files.txt
 fi
 
-exit 78
-
-# TODO: STAGE 3:do calibration
 if [[ ${STAGE} -le 3 ]]; then
   echo '==> Calibrating'
-  calibration.sh
+  ./calib_model.sh
 fi
 
-# TODO: STAGE 4:build model
 if [[ ${STAGE} -le 4 ]]; then
   echo '==> Building model'
-  build_model.sh 
+  ./save_model.sh 
 fi
 
 if [[ ${STAGE} -le 5 ]]; then
   for accuracy in "--accuracy" ""; do
     for scenario in Offline Server; do
       echo '==> Run RNN-T ${scenario} ${accuracy}'
-      run.sh ${scenario} ${accuracy}
+      ./launch_sut.sh ${scenario} ${accuracy}
     done
   done
   wait

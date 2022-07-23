@@ -54,6 +54,9 @@ pip install -r requirements.txt
 USE_CUDA=OFF python -m pip install -e .
 popd
 
+echo '==> Building clang'
+./install_clang.sh
+
 echo '==> Building mlperf_plugins, C++ loadgen & SUT'
 rm ${CONDA_PREFIX}/lib/cmake/mkl/*
 git submodule sync
