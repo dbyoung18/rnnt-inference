@@ -3,9 +3,8 @@ import mlperf_loadgen as lg
 import os
 import subprocess
 
-from pytorch_sut import PytorchSUT
-from rnnt_qsl import RNNTQSL
 from eval_accuracy import eval_acc
+from pytorch_sut import PytorchSUT
 from utils import *
 
 scenario_map = {
@@ -30,7 +29,7 @@ def parse_args():
     parser.add_argument("--dataset_dir", type=str, required=True)
     parser.add_argument("--log_dir", type=str, required=True)
     parser.add_argument("--run_mode", default=None,
-        choices=[None, "calib", "quant", "fake_quant"], help="run_mode, default fp32")
+        choices=[None, "calib", "quant", "fake_quant"], help="run_mode, default None(fp32)")
     parser.add_argument("--jit", action="store_true", help="enable jit")
     parser.add_argument("--split_fc1", action="store_true", help="split joint linear1")
     parser.add_argument("--enable_preprocess", action="store_true", help="enable audio preprocess")
@@ -40,15 +39,8 @@ def parse_args():
 
 def main():
     args = parse_args()
-    if args.run_mode == "quant":
-        from modeling_rnnt_quant import RNNT, GreedyDecoder
-    else:
-        from modeling_rnnt import RNNT, GreedyDecoder
-    rnnt = RNNT(args.model_path, run_mode=args.run_mode, split_fc1=args.split_fc1).eval()
-    model = GreedyDecoder(rnnt)
-    qsl = RNNTQSL(args.dataset_dir)
-    # create sut & qsl 
-    sut = PytorchSUT(model, qsl, args.batch_size, args.enable_preprocess, args.toml_path)
+    # create sut
+    sut = PytorchSUT(args.model_path, args.dataset_dir, args.batch_size, args)
     # set cfg
     settings = lg.TestSettings()
     settings.scenario = scenario_map[args.scenario]

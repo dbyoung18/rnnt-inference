@@ -8,21 +8,29 @@ import toml
 import torch
 
 from datasets.preprocessing import AudioPreprocessing
+from rnnt_qsl import RNNTQSL
 from utils import *
 
 
 class PytorchSUT:
-    def __init__(self, model, qsl, batch_size=1, enable_preprocess=False, config_toml=None, **kwargs):
-        self.batch_size = batch_size
-        self.enable_preprocess = enable_preprocess
-        if self.enable_preprocess:
-            config = toml.load(config_toml)
+    def __init__(self, model_path, dataset_dir, batch_size=1, args=None, **kwargs):
+        # create preprocessor
+        if args.enable_preprocess and os.path.exists(args.toml_path):
+            config = toml.load(args.toml_path)
             featurizer_config = config["input_eval"]
-            self.audio_preprocessor = AudioPreprocessing(**featurizer_config).eval()
-            self.audio_preprocessor = jit_module(self.audio_preprocessor)
-            torch.jit.save(self.audio_preprocessor, "audio_preprocessor_jit.pt")
-        self.model = model
-        self.qsl = qsl
+            self.preprocessor = AudioPreprocessing(**featurizer_config).eval()
+        else:
+            self.preprocessor = None
+        # create model
+        if args.run_mode == "quant":
+            from modeling_rnnt_quant import RNNT, GreedyDecoder
+        else:
+            from modeling_rnnt import RNNT, GreedyDecoder
+        rnnt = RNNT(model_path, args.run_mode, args.split_fc1).eval()
+        self.model = GreedyDecoder(rnnt)
+        self.batch_size = batch_size
+        self.enable_preprocess = (self.preprocessor != None)
+        self.qsl = RNNTQSL(dataset_dir)
         self.sut = lg.ConstructSUT(self.issue_queries, self.flush_queries)
 
     def issue_queries(self, samples):
@@ -38,7 +46,7 @@ class PytorchSUT:
                 [self.qsl[idx][0] for idx in batch_idx], batch_first=True)
             wav_lens = torch.tensor(
                 [self.qsl[idx][1] for idx in batch_idx])
-            feas, fea_lens = self.audio_preprocessor(wavs, wav_lens)
+            feas, fea_lens = self.preprocessor(wavs, wav_lens)
             feas = feas.permute(2, 0, 1)
         else:
             feas = torch.nn.utils.rnn.pad_sequence(

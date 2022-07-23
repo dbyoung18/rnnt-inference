@@ -5,27 +5,27 @@ import subprocess
 import torch
 
 from pytorch_sut import PytorchSUT
-from modeling_rnnt import *
-from rnnt_qsl import RNNTQSL
 from utils import *
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--toml_path", type=str, default="../configs/rnnt.toml")
     parser.add_argument("--model_path", type=str, default="work_dir/rnnt.pt")
     parser.add_argument("--dataset_dir", type=str, required=True)
+    parser.add_argument("--run_mode", default="calib",
+        choices=[None, "calib", "quant", "fake_quant"], help="run_mode, default calib")
+    parser.add_argument("--jit", action="store_true", help="enable jit")
     parser.add_argument("--split_fc1", action="store_true", help="split joint linear1")
+    parser.add_argument("--enable_preprocess", action="store_true", help="enable audio preprocess")
     args = parser.parse_args()
     return args
 
 def main():
     args = parse_args()
-    rnnt = RNNT(args.model_path, run_mode="calib", split_fc1=args.split_fc1).eval()
-    model = GreedyDecoder(rnnt)
-    qsl = RNNTQSL(args.dataset_dir)
-    # create sut & qsl 
-    sut = PytorchSUT(model, qsl, args.batch_size)
+    # create sut & qsl
+    sut = PytorchSUT(args.model_path, args.dataset_dir, args.batch_size, args)
     # calibration
     print("==> Running calibration...")
     for i in range(0, sut.qsl.count, args.batch_size):
