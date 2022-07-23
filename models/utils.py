@@ -4,7 +4,7 @@ import os
 import torch
 
 
-LOG_LEVEL=int(os.environ['LOG_LEVEL']) if 'LOG_LEVEL' in os.environ else logging.INFO
+LOG_LEVEL=int(os.environ['RNNT_LOG_LEVEL']) if 'RNNT_LOG_LEVEL' in os.environ else logging.INFO
 LOG_FORMAT="[%(filename)s:%(lineno)d %(levelname)s] %(message)s"
 logging.basicConfig(level=LOG_LEVEL, format=LOG_FORMAT)
 logger = logging.getLogger("RNNTLogger")
@@ -49,10 +49,18 @@ def jit_module(module):
     return fmodule
 
 def jit_model(model):
+    model.transcription.pre_quantizer = jit_module(model.transcription.pre_quantizer)
+    model.transcription.pre_rnn.lstm0 = jit_module(model.transcription.pre_rnn.lstm0)
+    model.transcription.pre_rnn.lstm1 = jit_module(model.transcription.pre_rnn.lstm1)
+    model.transcription.stack_time = jit_module(model.transcription.stack_time)
+    model.transcription.post_quantizer = jit_module(model.transcription.post_quantizer)
+    model.transcription.post_rnn.lstm0 = jit_module(model.transcription.post_rnn.lstm0)
+    model.transcription.post_rnn.lstm1 = jit_module(model.transcription.post_rnn.lstm1)
+    model.transcription.post_rnn.lstm2 = jit_module(model.transcription.post_rnn.lstm2)
     model.transcription = jit_module(model.transcription)
     model.prediction = jit_module(model.prediction)
     model.joint = jit_module(model.joint)
-    model = torch.jit.script(model)
+    #  model = torch.jit.script(model)
     return model
 
 def parse_calib(calib_path):
