@@ -48,7 +48,8 @@ public:
       int batch,
       bool ht = true,
       bool profiler = false,
-      const std::string& profiler_foler = ""
+      const std::string& profiler_foler = "",
+	  bool preprocessor = true
   );
 
   ~RNNTOfflineSUT ();
@@ -99,6 +100,7 @@ private:
   bool profiler_flag_;
   std::string profiler_folder_;
   // std::unique_ptr<ProfileRecord> guard_;
+  bool preprocessor_flag_;
 
   int rootProc(int index);
   void thInstance(int index);

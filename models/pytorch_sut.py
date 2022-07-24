@@ -42,19 +42,18 @@ class PytorchSUT:
             self.query_samples_complete(batch_samples, results)
 
     def inference(self, batch_idx):
-        if self.enable_preprocess:
-            wavs = torch.nn.utils.rnn.pad_sequence(
-                [self.qsl[idx][0] for idx in batch_idx], batch_first=True)
-            wav_lens = torch.tensor(
-                [self.qsl[idx][1] for idx in batch_idx])
-            feas, fea_lens = self.preprocessor(wavs, wav_lens)
-            feas = feas.permute(2, 0, 1)
-        else:
-            feas = torch.nn.utils.rnn.pad_sequence(
-                [self.qsl[idx][0] for idx in batch_idx])
-            fea_lens = torch.tensor(
-                [self.qsl[idx][1] for idx in batch_idx])
         with torch.no_grad():
+            if self.enable_preprocess:
+                wavs = torch.nn.utils.rnn.pad_sequence(
+                    [self.qsl[idx][0] for idx in batch_idx], batch_first=True)
+                wav_lens = torch.tensor(
+                    [self.qsl[idx][1] for idx in batch_idx])
+                feas, fea_lens = self.preprocessor(wavs, wav_lens)
+            else:
+                feas = torch.nn.utils.rnn.pad_sequence(
+                    [self.qsl[idx][0] for idx in batch_idx])
+                fea_lens = torch.tensor(
+                    [self.qsl[idx][1] for idx in batch_idx])
             results = self.model(feas, fea_lens)
         return results
 

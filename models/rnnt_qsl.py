@@ -4,7 +4,7 @@ import torch
 
 class RNNTQSL:
     def __init__(self, dataset_dir, perf_count=None):
-        self.dataset = list(torch.load(dataset_dir).values())  # [[x], [x_len]]
+        self.dataset = list(torch.load(dataset_dir).values())  # {"x":[], "x_lens":[]}
         self.count = len(self.dataset[0])
         perf_count = self.count if perf_count is None else perf_count
         self.sample_id_to_sample = {}
