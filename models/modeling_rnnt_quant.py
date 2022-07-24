@@ -189,7 +189,7 @@ class StackTime(torch.nn.Module):
 
     # TODO: opt reorder f: [T, N, TRANS_OC] => [T/2, N, TRANS_OC*2]
     def forward(self, x: torch.Tensor,
-            x_lens: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+            x_lens: torch.Tensor) -> List[torch.Tensor]:
         r = torch.transpose(x, 0, 1)
         s = r.shape
         zeros = torch.zeros(

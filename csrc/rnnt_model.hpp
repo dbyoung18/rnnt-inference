@@ -9,6 +9,7 @@
 using namespace torch::indexing;
 
 namespace models {
+using Stack = std::vector<at::IValue>;
 //
 // Functionality:
 //   1. Model load&adjust
@@ -16,6 +17,8 @@ namespace models {
 class TorchModel {
   using Module = torch::jit::script::Module;
   enum {
+    pre_num_layers = 2,
+    post_num_layers = 3,
     trans_hidden_size = 1024,
     pred_num_layers = 2,
     pred_hidden_size = 320,
@@ -36,56 +39,51 @@ public:
     model_ = torch::jit::load(filename);
   }
 
-  template <typename... Args>
-  std::vector<std::vector<int64_t>> inference(Args&&... args) {
-    return greedy_decode(model_, std::forward<Args>(args)...);
+  std::vector<std::vector<int64_t>> inference(Stack inputs) {
+    return greedy_decode(model_, inputs);
   }
 
-  template <typename... Args>
-  std::vector<std::vector<int64_t>> inference_at(int socket, Args&&... args) {
-    return greedy_decode(socket_model_[socket], std::forward<Args>(args)...);
+  std::vector<std::vector<int64_t>> inference_at(int socket, Stack inputs) {
+    return greedy_decode(socket_model_[socket], inputs);
   }
 
-  //template <typename... Args>
-  //std::vector<at::Tensor> lstm_layer_forward(Module lstm_layer, at::Tensor x, at::Tensor hx, at::Tensor cx) {
-    //// 1. cal lstm_cell
-    //std::vector<at::Tensor> y_list;
-    //for (int64_t step = 0; step < x.sizes()[0]; step++) {
-      //auto outputs = lstm_cell(x, hx, cx).toList();
-      //x = outputs[0];
-      //hx = outputs[1];
-      //cx = outputs[2];
-      //y_list.push_back(x);
-    //}
-    //// 2. pack lstm_cell output: y
-    //auto y = torch.stack(y_list, 0);
-    //return {y, hx, cx};
-  //}
+  std::vector<at::Tensor> lstm_layer_forward(Module lstm_cell, at::Tensor x,
+      at::Tensor hx, at::Tensor cx, bool last_layer) {
+    at::Tensor cell_y;
+    std::vector<at::Tensor> y_list;
+    for (int64_t step = 0; step < x.sizes()[0]; step++) {
+      auto outputs = lstm_cell({x[step], hx, cx, last_layer}).toTensorList();
+      cell_y = outputs[0];
+      hx = outputs[1];
+      cx = outputs[2];
+      y_list.push_back(cell_y);
+    }
+    auto y = at::stack(y_list, 0);
+    return {y, hx, cx};
+  }
 
-  //template <typename... Args>
-  //std::vector<at::Tensor> lstm_forward(Module lstm, at::Tensor x, at::Tensor hx, at::Tensor cx,
-      //int64_t num_layers) {
-    //auto sub_modules = lstm.children();
-    //auto lstm_cell;
-    //std::vector<at::Tensor> hy_list(num_layers);
-    //std::vector<at::Tensor> cy_list(num_layers);
-    //for (int64_t layer = 0; layer < num_layers; layer++) {
-      //// 0. parse lstm_cell
-      //lstm_cell = *sub_modules.begin();
-      //// 1. cal lstm_layer
-      //auto outputs = lstm_layer_forward(lstm_cell, x, hx[layer], cx[layer]);
-      //x = outputs[0];
-      //hy_list[layer] = outputs[1];
-      //cy_list[layer] = outputs[2];
-    //// 2. pack lstm_layer output: hy, cy
-    //auto hy = at::stack(hy_list, 0);
-    //auto cy = at::stack(cy_list, 0);
-    //return {x, hy, cy}
-  //}
+  std::vector<at::Tensor> lstm_forward(Module lstm, at::Tensor x,
+      at::Tensor hx, at::Tensor cx, int64_t num_layers) {
+    auto sub_modules = lstm.children();
+    auto cell_ptr = sub_modules.begin();
+    std::vector<at::Tensor> hy_list(num_layers);
+    std::vector<at::Tensor> cy_list(num_layers);
+    for (int64_t layer = 0; layer < num_layers; layer++) {
+      //auto lstm_cell = *sub_modules.begin();
+      auto lstm_cell = *cell_ptr;
+      auto outputs = lstm_layer_forward(
+          lstm_cell, x, hx[layer], cx[layer], layer==(num_layers-1));
+      x = outputs[0];
+      hy_list[layer] = outputs[1];
+      cy_list[layer] = outputs[2];
+      cell_ptr = cell_ptr++;
+    }
+    auto hy = at::stack(hy_list, 0);
+    auto cy = at::stack(cy_list, 0);
+    return {x, hy, cy};
+  }
 
-  template <typename... Args>
-  std::tuple<at::Tensor, at::Tensor> trans_forward(Module transcription, Args&&... args) {
-    printf("0. get submodule from transcription\n")
+  std::vector<at::Tensor> trans_forward(Module transcription, Stack inputs) {
     auto sub_modules = transcription.children();
     auto pre_rnn = *sub_modules.begin();
     auto stack_time = *(++sub_modules.begin());
@@ -93,35 +91,39 @@ public:
     auto pre_quantizer = *(++++++sub_modules.begin());
     auto post_quantizer = *(++++++++sub_modules.begin());
 
-    printf("1. parse x, x_lens from args\n")
-    auto x = args[0];
-    auto x_lens = args[1];
-    printf("2. exec pre_quantizer\n")
-    x = pre_quantizer(x).toTensor();
-    // 3. exec pre_lstm
-    auto y1 = lstm_forward(pre_rnn, std::make_tuple(x, NULL));
-    // 4. exec stack_time
-    auto y2, f_lens = stack_time(y1, x_lens);
-    // 5. exec post_quantizer
-    y2 = post_quantizer(y2);
-    // 6. exec post_lstm
-    auto f = lstm_forward(post_rnn, std::make_tuple(y2, f_lens)); 
-    // 7. return
-    return f, f_lens;
+    auto x = inputs[0];
+    auto x_lens = inputs[1];
+
+    auto quant_x = pre_quantizer({x}).toTensor();
+    auto hx = torch::zeros({pre_num_layers, quant_x.size(1), trans_hidden_size},
+        torch::dtype(torch::kInt8));
+    auto cx = torch::zeros({pre_num_layers, quant_x.size(1), trans_hidden_size},
+        torch::dtype(torch::kFloat32));
+    auto y1 = lstm_forward(pre_rnn, quant_x, hx, cx, pre_num_layers);
+
+    auto y2 = stack_time({y1[0], x_lens}).toTensorList();
+
+    auto quant_x2 = post_quantizer({y2.get(0)}).toTensor().contiguous();
+    auto hx2 = torch::zeros(
+        {post_num_layers, quant_x2.size(1), trans_hidden_size},
+        torch::dtype(torch::kInt8));
+    auto cx2 = torch::zeros(
+        {post_num_layers, quant_x2.size(1), trans_hidden_size},
+        torch::dtype(torch::kFloat32));
+    auto f = lstm_forward(post_rnn, quant_x2, hx2, cx2, post_num_layers); 
+    return {f[0], y2[1]};
   }
 
-  template <typename... Args>
-  std::vector<std::vector<int64_t>> greedy_decode(Module model, Args&&... args) {
+  std::vector<std::vector<int64_t>> greedy_decode(Module model, Stack inputs) {
     auto sub_modules = model.children();
     auto transcription = *sub_modules.begin();
     auto prediction = *(++sub_modules.begin());
     auto joint = *(++++sub_modules.begin());
 
-    //auto trans_res = trans_forward(transcription).toTuple()->elements();
-    trans_forward(transcription, std::forward<Args>(args)...);
-    auto trans_res = transcription.forward(std::forward<Args>(args)...).toTuple()->elements();
-    torch::Tensor f = trans_res[0].toTensor();
-    torch::Tensor f_lens = trans_res[1].toTensor();
+    auto trans_res = trans_forward(transcription, inputs);
+    //auto trans_res = transcription.forward(inputs).toTuple()->elements();
+    torch::Tensor f = trans_res[0];
+    torch::Tensor f_lens = trans_res[1];
 
     auto batch_size = f_lens.size(0);
     std::vector<std::vector<int64_t>> res(batch_size);

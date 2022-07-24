@@ -4,7 +4,10 @@ set -x
 export LD_PRELOAD=${CONDA_PREFIX}/lib/libjemalloc.so
 export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:percpu,metadata_thp:always,dirty_decay_ms:9000000000,muzzy_decay_ms:9000000000";
 
-: ${SCENARIO=${1:-"Offline"}}
+: ${BS=${1:-128}}
+: ${INTER:=2}
+: ${INTRA:=56}
+: ${SCENARIO=${2:-"Offline"}}
 : ${ACCURACY:=true}
 : ${DEBUG:=false}
 : ${WAV:=false}
@@ -16,13 +19,13 @@ OUT_DIR="${PWD}/logs/${SCENARIO}"
 mkdir -p ${OUT_DIR} ${WORK_DIR}
 
 if [[ ${SCENARIO} == "Offline" ]]; then
-  num_instance=1
-  core_per_instance=56
-  batch_size=32
+  num_instance=${INTER}
+  core_per_instance=${INTRA}
+  batch_size=${BS}
 elif [[ ${SCENARIO} == "Server" ]]; then
-  num_instance=1
-  core_per_instance=56
-  batch_size=128
+  num_instance=${INTER}
+  core_per_instance=${INTRA}
+  batch_size=${BS}
 fi
 
 SCRIPT_ARGS=" --test_scenario=${SCENARIO}"

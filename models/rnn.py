@@ -88,8 +88,9 @@ class QuantLSTM(nn.LSTM):
     def lstm_layer(self, x: Tensor, hx: Tensor, cx: Tensor, layer: int) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
         y_list = []
         for step in range(x.size(0)):
-            y, (hx, cx) = getattr(self, f"lstm{layer}")(x[step], hx, cx, layer==(self.num_layers-1))
-            y_list.append(y)
+            cell_y, hx, cx = getattr(self, f"lstm{layer}")(
+                x[step], hx, cx, layer==(self.num_layers-1))
+            y_list.append(cell_y)
         y = torch.stack(y_list, 0)
         return y, (hx, cx)
 
@@ -123,7 +124,7 @@ class LSTMCell(nn.LSTMCell):
         self.weight_hh = Parameter(
             self.weight_quantizer(self.weight_hh), requires_grad=False)
 
-    def forward(self, xt: Tensor, ht_1: Tensor, ct_1: Tensor, last_layer: bool=False) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
+    def forward(self, xt: Tensor, ht_1: Tensor, ct_1: Tensor, last_layer: bool=False) -> List[Tensor]:
         if hasattr(self, "input_quantizer") and self.input_quantizer.mode != None:
             xt, ht_1 = self.input_quantizer(
                 torch.cat([xt, ht_1], 1)).split([xt.size(1), ht_1.size(1)], 1)
@@ -137,7 +138,7 @@ class LSTMCell(nn.LSTMCell):
         ot = torch.sigmoid(ot)
         ct = (ft * ct_1) + (it * gt)
         ht = ot * torch.tanh(ct)
-        return ht, (ht, ct)
+        return ht, ht, ct
 
 
 class QuantLSTMCell(LSTMCell):
@@ -157,7 +158,7 @@ class QuantLSTMCell(LSTMCell):
         self.bias_hh = Parameter(self.bias_hh * b_scale, requires_grad=False)
         self.o_scale = 1 / b_scale
 
-    def forward(self, xt: Tensor, ht_1: Tensor, ct_1: Tensor, last_layer: bool) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
+    def forward(self, xt: Tensor, ht_1: Tensor, ct_1: Tensor, last_layer: bool) -> List[Tensor]:
         gates = P.linear(xt, self.weight_ih, self.bias_ih, self.o_scale.item(), None)
         # TODO: linear_add fusion
         gates += P.linear(ht_1, self.weight_hh, self.bias_hh, self.o_scale.item(), None)
@@ -176,5 +177,5 @@ class QuantLSTMCell(LSTMCell):
         else:
             yt = self.output_quantizer(ht)
         ht = self.input_quantizer(ht)
-        return yt, (ht, ct)
+        return yt, ht, ct
 
