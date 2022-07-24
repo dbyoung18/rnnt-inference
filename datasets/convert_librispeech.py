@@ -109,9 +109,9 @@ def preprocess_dataset(args, name, data_layer, data_preprocessor):
         feas.append(fea.squeeze().transpose(0, 1).contiguous())
         fea_lens.append(fea_len)
 
-    data_wav = {"wavs": wavs, "wav_lens": wav_lens}
+    data_wav = {"x": wavs, "x_lens": wav_lens}
     torch.save(data_wav, os.path.join(args.output_dir, "..", f"{name}-npy.pt"))
-    data_fea = {"feas": feas, "fea_lens": fea_lens}
+    data_fea = {"x": feas, "x_lens": fea_lens}
     torch.save(data_fea, os.path.join(args.output_dir, "..", f"{name}-input.pt"))
 
 def convert_dataset(args):

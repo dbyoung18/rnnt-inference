@@ -101,8 +101,10 @@ void RNNTQuerySampleLibrary::CheckSampleCount() {
 // For length 49 ~ 500, each with a bucket of std::list
 //
 Queue_t RNNTQuerySampleLibrary::Sort(
-    const std::vector<QuerySample>& samples, bool reverse,
-    size_t minLength, size_t maxLength) const {
+    const std::vector<QuerySample>& samples, bool preprocessor,
+	  bool reverse, size_t minLength, size_t maxLength) const {
+  minLength = preprocessor ? 23120 : 49;
+  maxLength = preprocessor ? 239920 : 500;
   const auto lengthOffset = minLength;
   const auto nBucket = maxLength - lengthOffset + 1;
 
@@ -137,7 +139,7 @@ Queue_t RNNTQuerySampleLibrary::Sort(
 // Assemble samples into larger batch
 //
 Stack RNNTQuerySampleLibrary::AssembleSamples(
-    std::vector<QuerySampleIndex> indices) const {
+    std::vector<QuerySampleIndex> indices, bool preprocessor) const {
   TensorList feas_list, fea_lens_list;
 
   feas_list.reserve(indices.size());
@@ -154,7 +156,11 @@ Stack RNNTQuerySampleLibrary::AssembleSamples(
 
     auto len = feas.size(0);
     if (len < maxLength) {  // Padding needed
-      std::vector<int64_t> newShape {maxLength};
+      std::vector<int64_t> newShape;
+      if (preprocessor)
+        newShape = {maxLength};
+      else
+        newShape = {maxLength, feas.size(1)};
 
       auto opts = at::TensorOptions().dtype<int>().memory_format(at::MemoryFormat::Contiguous);
 
@@ -164,9 +170,9 @@ Stack RNNTQuerySampleLibrary::AssembleSamples(
     } else {
       feas_list.emplace_back(feas);
     }
-     fea_lens_list.emplace_back(fea_lens);
+    fea_lens_list.emplace_back(fea_lens);
   }
-  auto feas = at::stack(feas_list, 0);  // {N, T}
+  auto feas = preprocessor ? at::stack(feas_list, 0) : at::stack(feas_list, 1);  // {N, T} or {T, N, C}
   auto fea_lens = at::cat(fea_lens_list);
   return Stack {feas, fea_lens};
 }

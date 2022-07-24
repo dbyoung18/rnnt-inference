@@ -5,13 +5,14 @@ export LD_PRELOAD=${CONDA_PREFIX}/lib/libjemalloc.so
 export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:percpu,metadata_thp:always,dirty_decay_ms:9000000000,muzzy_decay_ms:9000000000";
 
 : ${SCENARIO=${1:-"Offline"}}
-: ${ACCURACY=${2:-""}}
+: ${ACCURACY:=true}
 : ${DEBUG:=false}
+: ${WAV:=false}
 
 SUT_DIR=$(pwd)
 EXECUTABLE=${SUT_DIR}/build/rnnt_inference
 WORK_DIR=${SUT_DIR}/mlperf-rnnt-librispeech
-OUT_DIR="${WORK_DIR}/logs/${SCENARIO}"
+OUT_DIR="${PWD}/logs/${SCENARIO}"
 mkdir -p ${OUT_DIR} ${WORK_DIR}
 
 if [[ ${SCENARIO} == "Offline" ]]; then
@@ -26,15 +27,21 @@ fi
 
 SCRIPT_ARGS=" --test_scenario=${SCENARIO}"
 SCRIPT_ARGS+=" --model_file=${WORK_DIR}/rnnt_jit.pt"
-SCRIPT_ARGS+=" --sample_file=${WORK_DIR}/dev-clean-npy.pt"
-SCRIPT_ARGS+=" --preprocessor_file=${WORK_DIR}/audio_preprocessor_jit.pt"
 SCRIPT_ARGS+=" --mlperf_config=${SUT_DIR}/inference/mlperf.conf"
 SCRIPT_ARGS+=" --user_config=${SUT_DIR}/configs/user.conf"
 SCRIPT_ARGS+=" --output_dir=${OUT_DIR}"
 SCRIPT_ARGS+=" --inter_parallel=${num_instance}"
 SCRIPT_ARGS+=" --intra_parallel=${core_per_instance}"
 SCRIPT_ARGS+=" --batch_size=${batch_size}"
-SCRIPT_ARGS+=" --accuracy"
+
+if [[ ${WAV} == true ]]; then
+  SCRIPT_ARGS+=" --sample_file=${WORK_DIR}/dev-clean-npy.pt --preprocessor_file=${WORK_DIR}/preprocessor_jit.pt --preprocessor"
+else
+  SCRIPT_ARGS+=" --sample_file=${WORK_DIR}/dev-clean-input.pt --preprocessor_file=${WORK_DIR}/preprocessor_jit.pt"
+fi
+
+[ ${PROFILE} == true ] && SCRIPT_ARGS+=" --profiler"
+[ ${ACCURACY} == true ] && SCRIPT_ARGS+=" --accuracy"
 
 [ ${DEBUG} == "gdb" ] && EXEC_ARGS="gdb --args"
 [ ${DEBUG} == "lldb" ] && EXEC_ARGS="lldb --"

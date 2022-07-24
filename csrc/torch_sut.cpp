@@ -31,11 +31,12 @@ RNNTOfflineSUT::RNNTOfflineSUT(
     int intra_parallel,
     int batch, bool ht,
     bool profiler,
-    const std::string& profiler_folder
+    const std::string& profiler_folder,
+    bool preprocessor
   ) : qsl_(sample_file), model_(model_file),
   preprocessor_(preprocessor_file), mThreshold_(batch),
   nProcsPerInstance_(intra_parallel), nInstances_(inter_parallel), mHt_(ht),
-  profiler_flag_(profiler), profiler_folder_(profiler_folder) {
+  profiler_flag_(profiler), profiler_folder_(profiler_folder), preprocessor_flag_(preprocessor){
 
   auto nMaxProc = kmp::KMPLauncher::getMaxProc();
 
@@ -109,13 +110,17 @@ void RNNTOfflineSUT::thInstance(int index) {
       std::vector<mlperf::QuerySampleIndex> indices (samples.size());
       std::transform(samples.cbegin(), samples.cend(), indices.begin(),
           [](mlperf::QuerySample sample) {return sample.index;});
-      auto wav_stack = qsl_.AssembleSamples(std::move(indices));
-      auto results = preprocessor_.inference_at(which, wav_stack);
-      auto tList = qsl_.GetTensorListFrom(results);
-      auto tStack = at::stack(tList[0], -1);
-      QuerySamplesComplete(samples, tStack);
-      // auto results = model_.inference_at(which, fea_stack);
-      // QuerySamplesComplete(samples, results);
+      if (preprocessor_flag_) {
+        auto wav_stack = qsl_.AssembleSamples(std::move(indices), preprocessor_flag_);
+        auto fea_stack = preprocessor_.inference_at(which, wav_stack);
+        auto tList = qsl_.GetTensorListFrom(fea_stack);
+        auto results = at::stack(tList[0], -1);
+        QuerySamplesComplete(samples, results);
+      } else {
+        auto fea_stack = qsl_.AssembleSamples(std::move(indices), preprocessor_flag_);
+        auto results = model_.inference_at(which, fea_stack);
+        QuerySamplesComplete(samples, results);
+      }
     }
   }
 }
@@ -123,7 +128,7 @@ void RNNTOfflineSUT::thInstance(int index) {
 void RNNTOfflineSUT::IssueQuery(const std::vector<mlperf::QuerySample>& samples) {
   std::unique_lock<std::mutex> l(mtx_);
   // Parallel sort samples into a queue
-  mQueue_ = qsl_.Sort(samples);
+  mQueue_ = qsl_.Sort(samples, preprocessor_flag_);
   ctrl_.notify_one();
 }
 
@@ -157,8 +162,8 @@ void RNNTOfflineSUT::QuerySamplesComplete(
 std::string RNNTOfflineSUT::SequenceToString(const std::vector<int64_t>& seq) {
   std::string str = "";
   std::vector<char> labels = {' ', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i',
-	                      'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's',
-			      't', 'u', 'v', 'w', 'x', 'y', 'z', '\''};
+                              'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's',
+                              't', 'u', 'v', 'w', 'x', 'y', 'z', '\''};
   for (auto ch : seq)
     str.push_back(labels[ch]);
   return str;	
