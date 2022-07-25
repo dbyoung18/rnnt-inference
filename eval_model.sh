@@ -24,7 +24,7 @@ SCRIPT_ARGS+=" --mlperf_conf ${PWD}/configs/mlperf.conf"
 SCRIPT_ARGS+=" --user_conf ${PWD}/configs/user.conf"
 SCRIPT_ARGS+=" --split_fc1"
 SCRIPT_ARGS+=" --accuracy"
-if [[ ${MODE} == "fake_quant" ]]; then
+if [[ ${MODE} == "fake_quant" || ${MODE} == "quant" ]]; then
   SCRIPT_ARGS+=" --run_mode ${MODE} --model_path ${WORK_DIR}/rnnt_calib.pt"
 else
   SCRIPT_ARGS+=" --model_path ${WORK_DIR}/rnnt.pt"
