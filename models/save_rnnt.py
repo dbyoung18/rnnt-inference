@@ -19,7 +19,7 @@ def parse_args():
     parser.add_argument("--model_path", type=str, default="work_dir/rnnt.pt")
     parser.add_argument("--dataset_dir", type=str, required=True)
     parser.add_argument("--run_mode", default="quant",
-        choices=[None, "calib", "quant", "fake_quant"], help="run_mode, default quant")
+        choices=["f32", "calib", "quant", "fake_quant"], help="run_mode, default quant")
     parser.add_argument("--jit", action="store_true", help="enable jit")
     parser.add_argument("--split_fc1", action="store_true", help="split joint linear1")
     parser.add_argument("--enable_preprocess", action="store_true", help="enable audio preprocess")
@@ -38,16 +38,17 @@ def main():
         torch.jit.save(sut.preprocessor, jit_preprocessor_path)
     # quant & prepack model
     print("==> Freezing model...")
-    results = sut.inference(range(0, args.batch_size))
-    for i in range(len(results)):
-        logger.debug(f"{i}::{seq_to_sen(results[i])}")
-    quant_model_path = os.path.join(os.path.dirname(args.model_path), "rnnt_quant.pt")
-    torch.save(sut.model.rnnt.state_dict(), quant_model_path) 
+    if args.run_mode == "quant":
+        results = sut.inference(range(0, args.batch_size))
+        for i in range(len(results)):
+            logger.debug(f"{i}::{seq_to_sen(results[i])}")
+        quant_model_path = os.path.join(os.path.dirname(args.model_path), "rnnt_quant.pt")
+        torch.save(sut.model.rnnt.state_dict(), quant_model_path)
     # jit model
     if args.jit:
         print("==> JIT model...")
         sut.model.rnnt = jit_model(sut.model.rnnt)
-        jit_model_path = os.path.join(os.path.dirname(args.model_path), "rnnt_jit.pt")
+        jit_model_path = os.path.join(os.path.dirname(args.model_path), f"rnnt_jit_{args.run_mode}.pt")
         torch.jit.save(sut.model.rnnt, jit_model_path)
 
 if __name__ == "__main__":

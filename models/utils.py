@@ -3,8 +3,6 @@ import numpy as np
 import os
 import torch
 
-from rnn import *
-
 
 LOG_LEVEL=int(os.environ['RNNT_LOG_LEVEL']) if 'RNNT_LOG_LEVEL' in os.environ else logging.INFO
 LOG_FORMAT="[%(filename)s:%(lineno)d %(levelname)s] %(message)s"
@@ -53,7 +51,7 @@ def jit_module(module, to_freeze=True):
 
 def jit_model(model):
     for name, layer in model.transcription.named_children():
-        if isinstance(layer, QuantLSTM):
+        if isinstance(layer, torch.nn.LSTM):
             for sub_name, sub_layer in layer.named_children():
                 setattr(layer, f"{sub_name}", jit_module(sub_layer))
             setattr(model.transcription, f"{name}", jit_module(layer, False))

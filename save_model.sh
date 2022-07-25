@@ -6,14 +6,17 @@ set -x
 : ${BATCH_SIZE=${2:-128}}
 : ${LOG_LEVEL=${3:-10}}
 : ${MODEL_PATH=${4:-${WORK_DIR}/rnnt_calib.pt}}
-: ${DEBUG:=false}
+: ${MODE:=quant}
+: ${WAV:=true}
 : ${JIT:=false}
+: ${DEBUG:=false}
 
 export PYTHONPATH=${PWD}:${PWD}/models/:${PYTHONPATH}
 export RNNT_LOG_LEVEL=${LOG_LEVEL}
 
 SCRIPT_ARGS=" --batch_size ${BATCH_SIZE}"
 SCRIPT_ARGS+=" --model_path ${MODEL_PATH}"
+SCRIPT_ARGS+=" --run_mode ${MODE}"
 SCRIPT_ARGS+=" --split_fc1"
 if [[ ${WAV} == true ]]; then
   SCRIPT_ARGS+=" --dataset_dir ${WORK_DIR}/dev-clean-npy.pt --toml_path configs/rnnt.toml --enable_preprocess"

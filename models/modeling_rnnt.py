@@ -115,6 +115,7 @@ class Transcription(torch.nn.Module):
             RNNTParam.post_num_layers,
         )
 
+    @torch.jit.ignore
     def forward(self, x: torch.Tensor,
             x_lens: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         y1, _ = self.pre_rnn(x, None)
@@ -168,12 +169,14 @@ class Joint(torch.nn.Module):
         )
 
     def forward(self, f: torch.Tensor, g: torch.Tensor) -> torch.Tensor:
-        if self.split_fc1:
-            y1 = self.linear1_trans(f)
-            y1 += self.linear1_pred(g)
-        else:
-            x = torch.cat([f, g], dim=1)
-            y1 = self.linear1(x)
+        #  if self.split_fc1:
+            #  y1 = self.linear1_trans(f)
+            #  y1 += self.linear1_pred(g)
+        #  else:
+            #  x = torch.cat([f, g], dim=1)
+            #  y1 = self.linear1(x)
+        y1 = self.linear1_trans(f)
+        y1 += self.linear1_pred(g)
         y2 = self.relu(y1)
         y = self.linear2(y2)
         return y

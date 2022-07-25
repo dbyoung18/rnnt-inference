@@ -30,7 +30,7 @@ class QuantLSTM(nn.LSTM):
             else:
                 lstm_cell = LSTMCell(input_size, self.hidden_size)
 
-            if run_mode != None:
+            if run_mode != None and run_mode != "f32":
                 lstm_cell._init_quantizers(
                    WeightQuantizer(QUANT_LSTM_WEIGHT),
                    TensorQuantizer(QUANT_LSTM_ACTIVA),
@@ -125,9 +125,10 @@ class LSTMCell(nn.LSTMCell):
             self.weight_quantizer(self.weight_hh), requires_grad=False)
 
     def forward(self, xt: Tensor, ht_1: Tensor, ct_1: Tensor, last_layer: bool=False) -> List[Tensor]:
-        if hasattr(self, "input_quantizer") and self.input_quantizer.mode != None:
-            xt, ht_1 = self.input_quantizer(
-                torch.cat([xt, ht_1], 1)).split([xt.size(1), ht_1.size(1)], 1)
+        if hasattr(self, "input_quantizer"):
+            if self.input_quantizer.mode != None:
+                xt, ht_1 = self.input_quantizer(
+                    torch.cat([xt, ht_1], 1)).split([xt.size(1), ht_1.size(1)], 1)
         
         gates = F.linear(xt, self.weight_ih, self.bias_ih)
         gates += F.linear(ht_1, self.weight_hh, self.bias_hh)
