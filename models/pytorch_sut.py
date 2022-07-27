@@ -28,13 +28,21 @@ class PytorchSUT:
             from modeling_rnnt import RNNT, GreedyDecoder
         rnnt = RNNT(model_path, args.run_mode, args.split_fc1).eval()
         self.model = GreedyDecoder(rnnt)
-        self.batch_size = batch_size
         self.enable_preprocess = (self.preprocessor != None)
+        self.use_jit = args.jit
+        self.batch_size = batch_size
+        self.scenario = args.scenario
+        if self.use_jit:
+            if self.enable_preprocess:
+                self.preprocessor = jit_module(self.preprocessor)
+            self.model.rnnt = jit_model(self.model.rnnt)
         # create qsl & sut
         self.qsl = RNNTQSL(dataset_dir)
         self.sut = lg.ConstructSUT(self.issue_queries, self.flush_queries)
 
     def issue_queries(self, samples):
+        if self.scenario == "Offline":
+            samples.sort(key=lambda s: self.qsl[s.index][1].item(), reverse=True)
         for i in range(0, len(samples), self.batch_size):
             batch_samples = samples[i : min(i+self.batch_size, len(samples))]
             batch_idx = [sample.index for sample in batch_samples]
