@@ -85,9 +85,9 @@ int main(int argc, char **argv) {
 
   if (test_scenario == "Offline") {
     RNNTOfflineSUT sut(
-	    model_file, sample_file, preprocessor_file,
-		inter_parallel, intra_parallel,  batch_size, !disable_ht,
-		profiler_flag, profiler_folder, preprocessor_flag);
+      model_file, sample_file, preprocessor_file,
+      inter_parallel, intra_parallel,  batch_size, !disable_ht,
+      profiler_flag, profiler_folder, preprocessor_flag);
   
     testSettings.scenario = mlperf::TestScenario::Offline;
     testSettings.FromConfig(mlperf_conf, "rnnt", "Offline");

@@ -49,7 +49,7 @@ public:
       bool ht = true,
       bool profiler = false,
       const std::string& profiler_foler = "",
-	  bool preprocessor = true
+      bool preprocessor = true
   );
 
   ~RNNTOfflineSUT ();

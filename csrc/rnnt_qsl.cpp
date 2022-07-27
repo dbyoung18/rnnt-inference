@@ -102,7 +102,7 @@ void RNNTQuerySampleLibrary::CheckSampleCount() {
 //
 Queue_t RNNTQuerySampleLibrary::Sort(
     const std::vector<QuerySample>& samples, bool preprocessor,
-	  bool reverse, size_t minLength, size_t maxLength) const {
+    bool reverse, size_t minLength, size_t maxLength) const {
   minLength = preprocessor ? 23120 : 49;
   maxLength = preprocessor ? 239920 : 500;
   const auto lengthOffset = minLength;

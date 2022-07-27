@@ -72,7 +72,7 @@ public:
   // fea_lens: 49 -> 500
   Queue_t Sort(
       const std::vector<QuerySample>& samples, bool preprocessor = true,
-	  bool reverse = true, size_t minLength=23120, size_t maxLength=239920) const;
+      bool reverse = true, size_t minLength=23120, size_t maxLength=239920) const;
 
   c10::Dict<at::IValue, at::IValue> GetDictFrom(const std::string& filename);
 
