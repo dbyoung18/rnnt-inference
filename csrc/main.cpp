@@ -12,7 +12,7 @@
 int main(int argc, char **argv) {
   cxxopts::Options opts (
     "rnnt_inference", "MLPerf Benchmark, RNN-T Inference");
-  opts.allow_unrecognised_options();
+  //opts.allow_unrecognised_options();
   opts.add_options()
     ("m,model_file", "Torch Model File",
      cxxopts::value<std::string>())
@@ -56,7 +56,7 @@ int main(int argc, char **argv) {
     ("preprocessor_file", "Audio Preprocessor File",
      cxxopts::value<std::string>())
 
-    ("preprocesser", "Whether enbale audio preprocess or not",
+    ("preprocessor", "Whether enbale audio preprocess or not",
      cxxopts::value<bool>()->default_value("false"))
 
     ;
@@ -76,7 +76,7 @@ int main(int argc, char **argv) {
   auto accuracy_mode = parsed_opts["accuracy"].as<bool>();
   auto profiler_flag = parsed_opts["profiler"].as<bool>();
   auto profiler_folder = parsed_opts["profiler_folder"].as<std::string>();
-  auto preprocessor_flag = parsed_opts["preprocesser"].as<bool>();
+  auto preprocessor_flag = parsed_opts["preprocessor"].as<bool>();
   auto preprocessor_file = parsed_opts["preprocessor_file"].as<std::string>();
 
   mlperf::TestSettings testSettings;
