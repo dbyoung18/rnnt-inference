@@ -58,7 +58,7 @@ public:
 
   void FlushQueries() override {}
 
-  const std::string& Name() const override {
+  const std::string& Name() override {
     static const std::string name("RNN-T Offline");
     return name;
   }
