@@ -1,16 +1,15 @@
 import os
-import numpy as np
 import torch
-import torch.nn as nn
 import _C as P
-from torch import Tensor
-from torch.nn.parameter import Parameter
-from torch.nn import functional as F
-from typing import Any, List, Optional, Tuple
+
 from quant_modules import *
+from torch import Tensor
+from torch.nn import functional as F
+from torch.nn.parameter import Parameter
+from typing import List, Optional, Tuple
 
 
-class QuantLSTM(nn.LSTM):
+class QuantLSTM(torch.nn.LSTM):
     def __init__(self, input_size, hidden_size, num_layers, **kwargs):
         super(QuantLSTM, self).__init__(input_size, hidden_size, num_layers, **kwargs)
 
@@ -26,9 +25,9 @@ class QuantLSTM(nn.LSTM):
                 QUANT_LSTM_WEIGHT.mode = run_mode
             # create lstm cell
             if run_mode == "quant":
-                lstm_cell = QuantLSTMCell(input_size, self.hidden_size)
+                lstm_cell = iLSTMCell(input_size, self.hidden_size)
             else:
-                lstm_cell = LSTMCell(input_size, self.hidden_size)
+                lstm_cell = QuantLSTMCell(input_size, self.hidden_size)
 
             if run_mode != None and run_mode != "f32":
                 lstm_cell._init_quantizers(
@@ -55,6 +54,14 @@ class QuantLSTM(nn.LSTM):
             delattr(self, self._all_weights[layer][3])
 
     def _propagate_quantizers(self):
+        # per-module
+        # first_cell = getattr(self, "lstm0")
+        # for layer in range(self.num_layers):
+            # cur_cell = getattr(self, f"lstm{layer}")
+            # cur_cell.input_quantizer = first_cell.input_quantizer
+            # cur_cell.output_quantizer = first_cell.input_quantizer
+
+        # pre-layer
         for layer in range(self.num_layers):
             if layer != self.num_layers - 1:
                 cur_cell = getattr(self, f"lstm{layer}")
@@ -64,8 +71,6 @@ class QuantLSTM(nn.LSTM):
 
     @torch.jit.ignore
     def forward(self, x: Tensor, state: Optional[Tuple[Tensor, Tensor]]=None) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
-        #  x = self.lstm0.input_quantizer._quant_forward(x.contiguous())
-
         if state is None:
             hx = torch.zeros(self.num_layers, x.size(1), self.hidden_size,
                     dtype=x.dtype)
@@ -95,9 +100,9 @@ class QuantLSTM(nn.LSTM):
         return y, (hx, cx)
 
 
-class LSTMCell(nn.LSTMCell):
+class QuantLSTMCell(nn.LSTMCell):
     def __init__(self, input_size: int, hidden_size: int, **kwargs) -> None:
-        super(LSTMCell, self).__init__(input_size, hidden_size, **kwargs)
+        super(QuantLSTMCell, self).__init__(input_size, hidden_size, **kwargs)
 
     def _init_quantizers(self,
             weight_quantizer: WeightQuantizer=None,
@@ -142,9 +147,9 @@ class LSTMCell(nn.LSTMCell):
         return ht, ht, ct
 
 
-class QuantLSTMCell(LSTMCell):
+class iLSTMCell(QuantLSTMCell):
     def __init__(self, input_size: int, hidden_size: int, **kwargs) -> None:
-        super(QuantLSTMCell, self).__init__(input_size, hidden_size, **kwargs)
+        super(iLSTMCell, self).__init__(input_size, hidden_size, **kwargs)
 
     def _quant_parameters(self) -> None:
         self.weight_quantizer.amax = torch.max(
@@ -174,9 +179,10 @@ class QuantLSTMCell(LSTMCell):
         ht = ot * torch.tanh(ct)
         # TODO: quant last layer
         if last_layer:
-            yt = ht
+            yt = ht.clone()
         else:
             yt = self.output_quantizer(ht)
         ht = self.input_quantizer(ht)
+        # yt = ht
         return yt, ht, ct
 

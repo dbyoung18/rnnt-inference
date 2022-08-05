@@ -22,7 +22,7 @@ set(OpenMP_CXX_INCLUDE_DIR ${OpenMP_ROOT}/include)
 
 find_package(OpenMP REQUIRED)
 
-add_compile_options(-Wall -isystem ${OpenMP_CXX_INCLUDE_DIRS})
+add_compile_options(-Wall -gdwarf-4 -isystem ${OpenMP_CXX_INCLUDE_DIRS})
 
 # MLPerf loadgen, plugins dependency
 add_subdirectory(inference/loadgen)

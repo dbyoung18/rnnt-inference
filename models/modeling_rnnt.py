@@ -1,6 +1,8 @@
 import torch
+
 from torch.nn import Linear
-from rnn import QuantLSTM as LSTM
+# from quant_linear import QuantLinear as Linear
+from quant_lstm import QuantLSTM as LSTM
 from typing import List, Tuple
 from utils import *
 
@@ -27,9 +29,10 @@ class RNNTParam:
 
 
 class GreedyDecoder(torch.nn.Module):
-    def __init__(self, model):
+    def __init__(self, model, load_jit=False):
         super().__init__()
         self.rnnt = model
+        self.load_jit = load_jit
 
     def forward(self, x: torch.Tensor, x_lens: torch.Tensor) -> List[List[int]]:
         f, f_lens = self.rnnt.transcription(x, x_lens)
@@ -73,31 +76,50 @@ class GreedyDecoder(torch.nn.Module):
 
 
 class RNNT(torch.nn.Module):
-    def __init__(self, model_path=None, run_mode=None, split_fc1=False):
+    def __init__(self, model_path=None, run_mode=None, load_jit=False):
         super().__init__()
         self.transcription = Transcription()
         self.prediction = Prediction()
-        self.joint = Joint(split_fc1)
+        self.joint = Joint()
         if model_path is not None:
             saved_quantizers = False if run_mode == None or run_mode == "calib" else True
-            self._load_model(model_path, run_mode, saved_quantizers, split_fc1)
+            self._load_model(model_path, run_mode, load_jit, saved_quantizers)
 
-    def _load_model(self, model_path, run_mode=None, saved_quantizers=False, split_fc1=False):
-        model = torch.load(model_path, map_location="cpu")
-        state_dict = migrate_state_dict(model, split_fc1)
-        if saved_quantizers:
-            self.transcription.pre_rnn._init_cells(run_mode)
-            self.transcription.post_rnn._init_cells(run_mode)
-            self.load_state_dict(state_dict, strict=False)
+    def _load_model(self, model_path, run_mode=None, load_jit=False, saved_quantizers=False):
+        if load_jit and os.path.exists(model_path):
+            model = torch.jit.load(model_path, map_location="cpu")
+            self.transcription.pre_quantizer = model.transcription.pre_quantizer
+            self.transcription.pre_rnn.lstm0 = model.transcription.pre_rnn.lstm0
+            self.transcription.pre_rnn.lstm1 = model.transcription.pre_rnn.lstm1
+            self.transcription.stack_time = model.transcription.stack_time
+            self.transcription.post_quantizer = model.transcription.post_quantizer
+            self.transcription.post_rnn.lstm0 = model.transcription.post_rnn.lstm0
+            self.transcription.post_rnn.lstm1 = model.transcription.post_rnn.lstm1
+            self.transcription.post_rnn.lstm2 = model.transcription.post_rnn.lstm2
+            self.prediction = model.prediction
+            self.joint = model.joint
         else:
-            self.load_state_dict(state_dict, strict=False)
-            self.transcription.pre_rnn._init_cells(run_mode)
-            self.transcription.post_rnn._init_cells(run_mode)
-        self.transcription.pre_rnn._process_parameters(run_mode)
-        self.transcription.post_rnn._process_parameters(run_mode)
-        if run_mode == "quant":
-            self.transcription.pre_rnn._propagate_quantizers()
-            self.transcription.post_rnn._propagate_quantizers()
+            model = torch.load(model_path, map_location="cpu")
+            state_dict = migrate_state_dict(model)
+            if saved_quantizers:
+                self.transcription.pre_rnn._init_cells(run_mode)
+                self.transcription.post_rnn._init_cells(run_mode)
+                # self.joint.linear1_trans._init_quantizers(run_mode)
+                self.load_state_dict(state_dict, strict=False)
+            else:
+                self.load_state_dict(state_dict, strict=False)
+                self.transcription.pre_rnn._init_cells(run_mode)
+                self.transcription.post_rnn._init_cells(run_mode)
+                # self.joint.linear1_trans._init_quantizers(run_mode)
+
+            self.transcription.pre_rnn._process_parameters(run_mode)
+            self.transcription.post_rnn._process_parameters(run_mode)
+            # self.joint.linear1_trans._quant_parameters(run_mode)
+            if run_mode == "quant":
+                self.transcription.pre_rnn._propagate_quantizers()
+                self.transcription.post_rnn._propagate_quantizers()
+                self.transcription.pre_quantizer = self.transcription.pre_rnn.lstm0.input_quantizer
+                self.transcription.post_quantizer = self.transcription.post_rnn.lstm0.input_quantizer
 
 
 class Transcription(torch.nn.Module):
@@ -145,36 +167,23 @@ class Prediction(torch.nn.Module):
 
 
 class Joint(torch.nn.Module):
-    def __init__(self, split_fc1=False, **kwargs):
+    def __init__(self, **kwargs):
         super().__init__()
-        self.split_fc1 = split_fc1
-        if self.split_fc1:
-            self.linear1_trans = Linear(
-                RNNTParam.trans_hidden_size,
-                RNNTParam.joint_hidden_size
-            )
-            self.linear1_pred = Linear(
-                RNNTParam.pred_hidden_size,
-                RNNTParam.joint_hidden_size
-            )
-        else:
-            self.linear1 = Linear(
-                RNNTParam.trans_hidden_size+RNNTParam.pred_hidden_size,
-                RNNTParam.joint_hidden_size
-            )
+        self.linear1_trans = Linear(
+            RNNTParam.trans_hidden_size,
+            RNNTParam.joint_hidden_size
+        )
+        self.linear1_pred = torch.nn.Linear(
+            RNNTParam.pred_hidden_size,
+            RNNTParam.joint_hidden_size
+        )
         self.relu = torch.nn.ReLU()
-        self.linear2 = Linear(
+        self.linear2 = torch.nn.Linear(
             RNNTParam.joint_hidden_size,
             RNNTParam.num_labels
         )
 
     def forward(self, f: torch.Tensor, g: torch.Tensor) -> torch.Tensor:
-        #  if self.split_fc1:
-            #  y1 = self.linear1_trans(f)
-            #  y1 += self.linear1_pred(g)
-        #  else:
-            #  x = torch.cat([f, g], dim=1)
-            #  y1 = self.linear1(x)
         y1 = self.linear1_trans(f)
         y1 += self.linear1_pred(g)
         y2 = self.relu(y1)
@@ -189,7 +198,7 @@ class StackTime(torch.nn.Module):
 
     # TODO: opt reorder f: [T, N, TRANS_OC] => [T/2, N, TRANS_OC*2]
     def forward(self, x: torch.Tensor,
-            x_lens: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+            x_lens: torch.Tensor) -> List[torch.Tensor]:
         r = torch.transpose(x, 0, 1)
         s = r.shape
         zeros = torch.zeros(

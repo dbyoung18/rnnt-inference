@@ -38,7 +38,6 @@ TensorList RNNTQuerySampleLibrary::GetTensorListFrom(
       c10::nullopt,
       c10::nullopt,
       reader);
-
   return GetTensorListFrom(stack);
 }
 
@@ -54,6 +53,12 @@ TensorList RNNTQuerySampleLibrary::GetTensorListFrom(
     return TensorList();
 }
 
+Stack RNNTQuerySampleLibrary::GetIValueListFrom(at::IValue value) {
+  auto tensor_list = GetTensorListFrom(value);
+  Stack stack = {tensor_list[0], tensor_list[1]};
+  return stack;
+}
+
 c10::Dict<at::IValue, at::IValue> RNNTQuerySampleLibrary::GetDictFrom(
     const std::string& filename) {
   caffe2::serialize::PyTorchStreamReader reader(filename);
@@ -63,26 +68,29 @@ c10::Dict<at::IValue, at::IValue> RNNTQuerySampleLibrary::GetDictFrom(
       c10::nullopt,
       c10::nullopt,
       reader);
-
   // Exception management
   return stack.toGenericDict();
 }
 
 RNNTQuerySampleLibrary::RNNTQuerySampleLibrary(
     const std::string& filename,
-    const char* feas_name,
-    const char* fea_lens_name) {
+    const char* x_name,
+    const char* x_lens_name) {
   auto datasets = GetDictFrom(filename);
-  feas_set_ = GetTensorListFrom(datasets, feas_name);
-  fea_lens_set_ = GetTensorListFrom(datasets, fea_lens_name);
+  x_set_ = GetTensorListFrom(datasets, x_name);
+  x_lens_set_ = GetTensorListFrom(datasets, x_lens_name);
+  minLength = at::min(at::cat(x_lens_set_)).item().toInt();
+  maxLength = at::max(at::cat(x_lens_set_)).item().toInt();
   CheckSampleCount();
 }
 
 RNNTQuerySampleLibrary::RNNTQuerySampleLibrary(
-    const std::string& f_feas,
-    const std::string& f_fea_lens) {
-  feas_set_ = GetTensorListFrom(f_feas);
-  fea_lens_set_ = GetTensorListFrom(f_fea_lens);
+    const std::string& f_x,
+    const std::string& f_x_lens) {
+  x_set_ = GetTensorListFrom(f_x);
+  x_lens_set_ = GetTensorListFrom(f_x_lens);
+  minLength = at::min(at::cat(x_lens_set_)).item().toInt();
+  maxLength = at::max(at::cat(x_lens_set_)).item().toInt();
   CheckSampleCount();
 }
 
@@ -98,13 +106,11 @@ void RNNTQuerySampleLibrary::CheckSampleCount() {
 
 //
 // Parallel bucket sort (unstable) would be the most efficient choice
-// For length 49 ~ 500, each with a bucket of std::list
+// For length minLength ~ maxLength, each with a bucket of std::list
 //
 Queue_t RNNTQuerySampleLibrary::Sort(
     const std::vector<QuerySample>& samples, bool preprocessor,
-    bool reverse, size_t minLength, size_t maxLength) const {
-  minLength = preprocessor ? 23120 : 49;
-  maxLength = preprocessor ? 239920 : 500;
+    bool reverse) const {
   const auto lengthOffset = minLength;
   const auto nBucket = maxLength - lengthOffset + 1;
 
@@ -140,41 +146,41 @@ Queue_t RNNTQuerySampleLibrary::Sort(
 //
 Stack RNNTQuerySampleLibrary::AssembleSamples(
     std::vector<QuerySampleIndex> indices, bool preprocessor) const {
-  TensorList feas_list, fea_lens_list;
+  TensorList x_list, x_lens_list;
 
-  feas_list.reserve(indices.size());
-  fea_lens_list.reserve(indices.size());
+  x_list.reserve(indices.size());
+  x_lens_list.reserve(indices.size());
 
   int64_t maxLength = 0;
  
   for (auto index : indices) {
-    auto feas = feas_set_[index];
-    auto fea_lens = fea_lens_set_[index];
+    auto x = x_set_[index];
+    auto x_lens = x_lens_set_[index];
  
     if (maxLength == 0)
-      maxLength = feas.size(0);
+      maxLength = x.size(0);
 
-    auto len = feas.size(0);
+    auto len = x.size(0);
     if (len < maxLength) {  // Padding needed
       std::vector<int64_t> newShape;
       if (preprocessor)
         newShape = {maxLength};
       else
-        newShape = {maxLength, feas.size(1)};
+        newShape = {maxLength, x.size(1)};
 
-      auto opts = at::TensorOptions().dtype<int>().memory_format(at::MemoryFormat::Contiguous);
+      auto opts = at::TensorOptions().dtype<float>().memory_format(at::MemoryFormat::Contiguous);
 
-      auto padded_feas = at::zeros(newShape, opts);
-      padded_feas.narrow(0, 0, len).copy_(feas);
-      feas_list.emplace_back(padded_feas);
+      auto padded_x = at::zeros(newShape, opts);
+      padded_x.narrow(0, 0, len).copy_(x);
+      x_list.emplace_back(padded_x);
     } else {
-      feas_list.emplace_back(feas);
+      x_list.emplace_back(x);
     }
-    fea_lens_list.emplace_back(fea_lens);
+    x_lens_list.emplace_back(x_lens);
   }
-  auto feas = preprocessor ? at::stack(feas_list, 0) : at::stack(feas_list, 1);  // {N, T} or {T, N, C}
-  auto fea_lens = at::cat(fea_lens_list);
-  return Stack {feas, fea_lens};
+  auto x = preprocessor ? at::stack(x_list, 0) : at::stack(x_list, 1);  // {N, T} or {T, N, C}
+  auto x_lens = at::cat(x_lens_list);
+  return Stack {x, x_lens};
 }
 
 }

@@ -11,43 +11,32 @@ export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:per
 : ${DEBUG:=false}
 : ${MODE:=f32}
 : ${WAV:=false}
-: ${LOAD_JIT:=false}
-: ${SAVE_JIT:=false}
+: ${JIT:=false}
 
 export PYTHONPATH=${PWD}:${PWD}/models/:${PYTHONPATH}
 export RNNT_LOG_LEVEL=${LOG_LEVEL}
 
 SCRIPT_ARGS=" --scenario ${SCENARIO}"
-SCRIPT_ARGS+=" --run_mode ${MODE}"
 SCRIPT_ARGS+=" --batch_size ${BS}"
 SCRIPT_ARGS+=" --manifest_path ${WORK_DIR}/local_data/wav/dev-clean-wav.json"
 SCRIPT_ARGS+=" --log_dir ${PWD}/logs/${SCENARIO}"
 SCRIPT_ARGS+=" --mlperf_conf ${PWD}/configs/mlperf.conf"
 SCRIPT_ARGS+=" --user_conf ${PWD}/configs/user.conf"
+SCRIPT_ARGS+=" --split_fc1"
 SCRIPT_ARGS+=" --accuracy"
-# set dataset & preprocessor
+if [[ ${MODE} == "quant" ]]; then
+  SCRIPT_ARGS+=" --run_mode ${MODE} --model_path ${WORK_DIR}/rnnt_quant_jit.pt"
+else
+  SCRIPT_ARGS+=" --run_mode ${MODE} --model_path ${WORK_DIR}/rnnt_jit.pt"
+fi
+
 if [[ ${WAV} == true ]]; then
   SCRIPT_ARGS+=" --dataset_dir ${WORK_DIR}/dev-clean-npy.pt --toml_path configs/rnnt.toml --enable_preprocess"
-  if [[ ${LOAD_JIT} == true ]]; then
-    SCRIPT_ARGS+=" --preprocessor_path ${WORK_DIR}/preprocessor_jit.pt"
-  fi
 else
   SCRIPT_ARGS+=" --dataset_dir ${WORK_DIR}/dev-clean-input.pt"
 fi
-# set model
-if [[ ${LOAD_JIT} == true ]]; then
-  SCRIPT_ARGS+=" --load_jit"
-  if [[ ${MODE} == "quant" || ${MODE} == "f32" || ${MODE} == "" ]]; then
-    SCRIPT_ARGS+=" --model_path ${WORK_DIR}/rnnt_${MODE}_jit.pt"
-  fi
-else
-  if [[ ${MODE} == "quant" || ${MODE} == "fake_quant" ]]; then
-    SCRIPT_ARGS+=" --model_path ${WORK_DIR}/rnnt_calib.pt"
-  else
-    SCRIPT_ARGS+=" --model_path ${WORK_DIR}/rnnt.pt"
-  fi
-fi
-[ ${SAVE_JIT} == true ] && SCRIPT_ARGS+=" --save_jit"
+
+[ ${JIT} == true ] && SCRIPT_ARGS+=" --load_jit"
 
 [ ${DEBUG} == "pdb" ] && EXEC_ARGS="ipdb3"
 [ ${DEBUG} == "gdb" ] && EXEC_ARGS="gdb --args python"
@@ -57,3 +46,4 @@ fi
 ${EXEC_ARGS} models/main.py ${SCRIPT_ARGS}
 
 set +x
+

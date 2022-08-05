@@ -15,7 +15,8 @@ scenario_map = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--perf_count", type=int, default=None, help="number of samples")
+    parser.add_argument("--perf_count", type=int, default=None,
+        help="number of samples")
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--scenario", default="Offline",
         choices=["SingleStream", "Offline", "Server"], help="Scenario")
@@ -25,15 +26,20 @@ def parse_args():
         help="user config for user LoadGen settings such as target QPS")
     parser.add_argument("--toml_path", type=str, default="../configs/rnnt.toml")
     parser.add_argument("--model_path", type=str, default="work_dir/rnnt.pt")
+    parser.add_argument("--preprocessor_path", type=str,
+        default="work_dir/preprocesspr.pt")
     parser.add_argument("--manifest_path", type=str, required=True)
     parser.add_argument("--dataset_dir", type=str, required=True)
     parser.add_argument("--log_dir", type=str, required=True)
     parser.add_argument("--run_mode", default=None,
-        choices=[None, "calib", "quant", "fake_quant"], help="run_mode, default None(fp32)")
-    parser.add_argument("--jit", action="store_true", help="enable jit")
-    parser.add_argument("--split_fc1", action="store_true", help="split joint linear1")
-    parser.add_argument("--enable_preprocess", action="store_true", help="enable audio preprocess")
-    parser.add_argument("--accuracy", action="store_true", help="enable accuracy evaluation")
+        choices=[None, "f32", "calib", "quant", "fake_quant"],
+        help="run_mode, default None(fp32)")
+    parser.add_argument("--load_jit", action="store_true", help="load jit model")
+    parser.add_argument("--save_jit", action="store_true", help="save jit model")
+    parser.add_argument("--enable_preprocess", action="store_true",
+        help="enable audio preprocess")
+    parser.add_argument("--accuracy", action="store_true",
+        help="enable accuracy evaluation")
     args = parser.parse_args()
     return args
 

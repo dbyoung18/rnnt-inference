@@ -75,7 +75,7 @@ public:
       x = outputs[0];
       hy_list[layer] = outputs[1];
       cy_list[layer] = outputs[2];
-      module_ptr = module_ptr++;
+      module_ptr = ++module_ptr;
     }
     auto hy = at::stack(hy_list, 0);
     auto cy = at::stack(cy_list, 0);
@@ -83,12 +83,12 @@ public:
   }
 
   std::vector<at::Tensor> trans_forward(Module transcription, Stack inputs) {
-    auto module_ptr = transcription.children().begin();
-    auto pre_rnn = *module_ptr;
-    auto stack_time = *(++module_ptr);
-    auto post_rnn = *(++++module_ptr);
-    auto pre_quantizer = *(++++++module_ptr);
-    auto post_quantizer = *(++++++++module_ptr);
+    auto children = transcription.children();
+    auto pre_rnn = *children.begin();
+    auto stack_time = *(++children.begin());
+    auto post_rnn = *(++++children.begin());
+    auto pre_quantizer = *(++++++children.begin());
+    auto post_quantizer = *(++++++++children.begin());
 
     auto x = inputs[0];
     auto x_lens = inputs[1];
@@ -114,10 +114,10 @@ public:
   }
 
   std::vector<std::vector<int64_t>> greedy_decode(Module model, Stack inputs) {
-    auto module_ptr = model.children().begin();
-    auto transcription = *module_ptr;
-    auto prediction = *(++module_ptr);
-    auto joint = *(++++module_ptr);
+    auto children = model.children();
+    auto transcription = *children.begin();
+    auto prediction = *(++children.begin());
+    auto joint = *(++++children.begin());
     std::vector<torch::jit::Module> modules;
 
     auto trans_res = trans_forward(transcription, inputs);

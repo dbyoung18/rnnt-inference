@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import _C as P
+
 from torch import Tensor
 
 
@@ -45,9 +46,9 @@ class QuantDescriptor():
         return self._narrow_bound
 
 
-# per-tensor & per-cell
+QUANT_LINEAR_ACTIVA = QuantDescriptor(axis=None, amax=None, mode="fake_quant", update_amax=False)
+QUANT_LINEAR_WEIGHT = QuantDescriptor(axis=None, amax=None, mode="fake_quant")
 QUANT_LSTM_ACTIVA = QuantDescriptor(axis=None, amax=None, mode="fake_quant", update_amax=False)
-# per-oc & per-layer
 QUANT_LSTM_WEIGHT = QuantDescriptor(axis=None, amax=None, mode="fake_quant")
 
 
@@ -69,6 +70,8 @@ class TensorQuantizer(nn.Module):
         self._scale = torch.tensor(0.)
         self._name = kwargs.pop("name", "TensorQuantizer")
         self._update_amax = quant_desc.update_amax  # dynamic
+        self._track_amax = True
+        self._amaxs = []
 
     @property
     def mode(self):
@@ -93,9 +96,16 @@ class TensorQuantizer(nn.Module):
     def scale(self, value):
         self._scale = value
 
+    def calib_amax(self, inputs):
+        cur_amax = inputs.abs().max()
+        self.amax = torch.max(self.amax, cur_amax)
+        # if self._track_amax:
+            # self._amaxs.append(cur_amax)
+
     @torch.jit.export
     def _quant_forward(self, inputs: Tensor) -> Tensor:
         self.scale = self._max_bound / self.amax
+        # print(self.scale)
         outputs = round_and_clamp(inputs * self.scale, self._min_bound, self._max_bound)
         outputs = outputs.type(torch.int8)
         return outputs
@@ -109,6 +119,7 @@ class TensorQuantizer(nn.Module):
                 self.amax = torch.max(inputs.abs())
 
         self.scale = self._max_bound / self.amax
+        # print(self.scale)
         outputs = round_and_clamp(inputs * self.scale, self._min_bound, self._max_bound)
         outputs /= self.scale
         return outputs
@@ -116,7 +127,7 @@ class TensorQuantizer(nn.Module):
     def forward(self, inputs: Tensor) -> Tensor:
         outputs = inputs
         if self._mode == "calib":
-            self.amax = torch.max(self.amax, inputs.abs().max())
+            self.calib_amax(inputs)
         elif self._mode == "quant":
             outputs = self._quant_forward(inputs)
         elif self._mode == "fake_quant":

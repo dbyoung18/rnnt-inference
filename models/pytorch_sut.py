@@ -16,9 +16,12 @@ class PytorchSUT:
     def __init__(self, model_path, dataset_dir, batch_size=1, args=None, **kwargs):
         # create preprocessor
         if args.enable_preprocess and os.path.exists(args.toml_path):
-            config = toml.load(args.toml_path)
-            featurizer_config = config["input_eval"]
-            self.preprocessor = AudioPreprocessing(**featurizer_config).eval()
+            if args.load_jit and os.path.exists(args.preprocessor_path):
+                self.preprocessor = torch.jit.load(args.preprocessor_path)
+            else:
+                config = toml.load(args.toml_path)
+                featurizer_config = config["input_eval"]
+                self.preprocessor = AudioPreprocessing(**featurizer_config).eval()
         else:
             self.preprocessor = None
         # create model
@@ -26,13 +29,13 @@ class PytorchSUT:
             from modeling_rnnt_quant import RNNT, GreedyDecoder
         else:
             from modeling_rnnt import RNNT, GreedyDecoder
-        rnnt = RNNT(model_path, args.run_mode, args.split_fc1).eval()
-        self.model = GreedyDecoder(rnnt)
+        rnnt = RNNT(model_path, args.run_mode, args.load_jit).eval()
+        self.model = GreedyDecoder(rnnt, args.load_jit)
         self.enable_preprocess = (self.preprocessor != None)
-        self.use_jit = args.jit
         self.batch_size = batch_size
-        self.scenario = args.scenario
-        if self.use_jit:
+        self.scenario = args.scenario if args.run_mode != "calib" else None
+        # jit preprocessor & model
+        if not args.load_jit and args.save_jit:
             if self.enable_preprocess:
                 self.preprocessor = jit_module(self.preprocessor)
             self.model.rnnt = jit_model(self.model.rnnt)

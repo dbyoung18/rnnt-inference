@@ -8,9 +8,12 @@ export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:per
 : ${INTER:=2}
 : ${INTRA:=56}
 : ${SCENARIO=${2:-"Offline"}}
-: ${ACCURACY:=true}
+: ${ACCURACY:=false}
+: ${PROFILE:=false}
 : ${DEBUG:=false}
 : ${WAV:=false}
+: ${HT:=true}
+: ${COUNT:=}
 
 SUT_DIR=$(pwd)
 EXECUTABLE=${SUT_DIR}/build/rnnt_inference
@@ -29,7 +32,7 @@ elif [[ ${SCENARIO} == "Server" ]]; then
 fi
 
 SCRIPT_ARGS=" --test_scenario=${SCENARIO}"
-SCRIPT_ARGS+=" --model_file=${WORK_DIR}/rnnt_jit.pt"
+SCRIPT_ARGS+=" --model_file=${WORK_DIR}/rnnt_quant_jit_no_cf.pt"
 SCRIPT_ARGS+=" --mlperf_config=${SUT_DIR}/inference/mlperf.conf"
 SCRIPT_ARGS+=" --user_config=${SUT_DIR}/configs/user.conf"
 SCRIPT_ARGS+=" --output_dir=${OUT_DIR}"
@@ -43,16 +46,20 @@ else
   SCRIPT_ARGS+=" --sample_file=${WORK_DIR}/dev-clean-input.pt --preprocessor_file=${WORK_DIR}/preprocessor_jit.pt"
 fi
 
+[ ${HT} == false ]  && SCRIPT_ARGS+=" --disable-hyperthreading"
 [ ${PROFILE} == true ] && SCRIPT_ARGS+=" --profiler"
 [ ${ACCURACY} == true ] && SCRIPT_ARGS+=" --accuracy"
+if [[ ${ACCURACY} != true && ${COUNT} != "" ]]; then
+  SCRIPT_ARGS+=" --perf_count ${COUNT}"
+fi
 
 [ ${DEBUG} == "gdb" ] && EXEC_ARGS="gdb --args"
 [ ${DEBUG} == "lldb" ] && EXEC_ARGS="lldb --"
 
 ${EXEC_ARGS} ${EXECUTABLE} ${SCRIPT_ARGS}
 
-if [[ ${ACCURACY} == "--accuracy" ]]; then
-  python eval_accuracy.py \
+if [[ ${ACCURACY} == true ]]; then
+  python -u eval_accuracy.py \
     --log_path=${OUT_DIR}/mlperf_log_accuracy.json \
     --manifest_path=${WORK_DIR}/local_data/wav/dev-clean-wav.json
 fi

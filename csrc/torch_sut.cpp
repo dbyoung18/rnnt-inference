@@ -13,6 +13,8 @@
 
 #include "torch_sut.hpp"
 
+using Stack = std::vector<at::IValue>;
+
 ProfileRecord::ProfileRecord(
   bool is_record,
   const std::string& profiler_file
@@ -23,7 +25,7 @@ ProfileRecord::ProfileRecord(
   }
 }
 
-RNNTOfflineSUT::RNNTOfflineSUT(
+RNNTSUT::RNNTSUT(
     const std::string& model_file,
     const std::string& sample_file,
     const std::string& preprocessor_file,
@@ -32,11 +34,14 @@ RNNTOfflineSUT::RNNTOfflineSUT(
     int batch, bool ht,
     bool profiler,
     const std::string& profiler_folder,
-    bool preprocessor
+    bool preprocessor,
+    std::string test_scenario,
+    int perf_count
   ) : qsl_(sample_file), model_(model_file),
   preprocessor_(preprocessor_file), mThreshold_(batch),
   nProcsPerInstance_(intra_parallel), nInstances_(inter_parallel), mHt_(ht),
-  profiler_flag_(profiler), profiler_folder_(profiler_folder), preprocessor_flag_(preprocessor){
+  profiler_flag_(profiler), profiler_folder_(profiler_folder),
+  preprocessor_flag_(preprocessor), test_scenario_(test_scenario), perf_count_(perf_count) {
 
   auto nMaxProc = kmp::KMPLauncher::getMaxProc();
 
@@ -45,13 +50,13 @@ RNNTOfflineSUT::RNNTOfflineSUT(
 
   // Construct instances
   for (int i = 0; i < nInstances_; ++ i)
-    mInstances_.emplace_back(&RNNTOfflineSUT::thInstance, this, i);
+    mInstances_.emplace_back(&RNNTSUT::thInstance, this, i);
 }
 
 //
 // TODO: Use hierachy information to allocate place
 //
-int RNNTOfflineSUT::rootProc(int index) {
+int RNNTSUT::rootProc(int index) {
   auto nMaxProc = kmp::KMPLauncher::getMaxProc();
 
   // XXX : Assumed 2-sockets, HT on !!!
@@ -64,7 +69,7 @@ int RNNTOfflineSUT::rootProc(int index) {
   return root;
 }
 
-void RNNTOfflineSUT::thInstance(int index) {
+void RNNTSUT::thInstance(int index) {
   at::NoGradGuard no_grad;
 
   kmp::KMPLauncher thCtrl;
@@ -82,11 +87,12 @@ void RNNTOfflineSUT::thInstance(int index) {
   // Wait for work
   std::string log_name;
   if (profiler_flag_) {
-    log_name = profiler_folder_ + "/test_log_" + std::to_string(index) + "_" + std::to_string(which) + ".json";
+    log_name = profiler_folder_ + "/" + Name() + "_" + std::to_string(index) + "_" + std::to_string(which) + ".json";
     std::ofstream out(log_name);
   }
   {
     auto guard_ = std::make_unique<ProfileRecord>(profiler_flag_, log_name);
+    size_t nIteration = 0;
     while (true) {
       // critical section
       {
@@ -110,29 +116,38 @@ void RNNTOfflineSUT::thInstance(int index) {
       std::vector<mlperf::QuerySampleIndex> indices (samples.size());
       std::transform(samples.cbegin(), samples.cend(), indices.begin(),
           [](mlperf::QuerySample sample) {return sample.index;});
+      Stack fea_stack;
       if (preprocessor_flag_) {
         auto wav_stack = qsl_.AssembleSamples(std::move(indices), preprocessor_flag_);
-        auto fea_stack = preprocessor_.inference_at(which, wav_stack);
-        auto tList = qsl_.GetTensorListFrom(fea_stack);
-        auto results = at::stack(tList[0], -1);
-        QuerySamplesComplete(samples, results);
+        auto pre_results = preprocessor_.inference_at(which, wav_stack);
+        fea_stack = qsl_.GetIValueListFrom(pre_results);
+        //QuerySamplesComplete(samples, at::stack(tList[0], -1));
       } else {
-        auto fea_stack = qsl_.AssembleSamples(std::move(indices), preprocessor_flag_);
-        auto results = model_.inference_at(which, fea_stack);
-        QuerySamplesComplete(samples, results);
+        fea_stack = qsl_.AssembleSamples(std::move(indices), preprocessor_flag_);
       }
+      auto results = model_.inference_at(which, fea_stack);
+      QuerySamplesComplete(samples, results);
+
+      nIteration += 1;
+      if (nIteration * mThreshold_ >= perf_count_)
+        guard_->~ProfileRecord();
     }
   }
 }
 
-void RNNTOfflineSUT::IssueQuery(const std::vector<mlperf::QuerySample>& samples) {
+void RNNTSUT::IssueQuery(const std::vector<mlperf::QuerySample>& samples) {
   std::unique_lock<std::mutex> l(mtx_);
-  // Parallel sort samples into a queue
-  mQueue_ = qsl_.Sort(samples, preprocessor_flag_);
+  if (test_scenario_ == "Offline") {
+    // Parallel sort samples into a queue
+    mQueue_ = qsl_.Sort(samples, preprocessor_flag_);
+  } else {
+    for (auto sample : samples)
+      mQueue_.emplace_back(sample);
+  }
   ctrl_.notify_one();
 }
 
-void RNNTOfflineSUT::QuerySamplesComplete(
+void RNNTSUT::QuerySamplesComplete(
     const std::vector<mlperf::QuerySample>& samples,
     const std::vector<std::vector<int64_t>>& results) {
   std::vector<mlperf::QuerySampleResponse> responses(samples.size());
@@ -146,7 +161,7 @@ void RNNTOfflineSUT::QuerySamplesComplete(
   mlperf::QuerySamplesComplete(responses.data(), responses.size());
 }
 
-void RNNTOfflineSUT::QuerySamplesComplete(
+void RNNTSUT::QuerySamplesComplete(
     const std::vector<mlperf::QuerySample>& samples,
     const at::Tensor& results) {
   std::vector<mlperf::QuerySampleResponse> responses(samples.size());
@@ -159,7 +174,7 @@ void RNNTOfflineSUT::QuerySamplesComplete(
   mlperf::QuerySamplesComplete(responses.data(), responses.size());
 }
 
-std::string RNNTOfflineSUT::SequenceToString(const std::vector<int64_t>& seq) {
+std::string RNNTSUT::SequenceToString(const std::vector<int64_t>& seq) {
   std::string str = "";
   std::vector<char> labels = {' ', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i',
                               'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's',
@@ -169,7 +184,7 @@ std::string RNNTOfflineSUT::SequenceToString(const std::vector<int64_t>& seq) {
   return str;	
 }
 
-RNNTOfflineSUT::~RNNTOfflineSUT() {
+RNNTSUT::~RNNTSUT() {
   {
     std::unique_lock<std::mutex> l(mtx_);
     mStop_ = true;

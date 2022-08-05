@@ -17,22 +17,22 @@ class RNNTQuerySampleLibrary : public QuerySampleLibrary {
 public:
   RNNTQuerySampleLibrary(
       const std::string& filename,
-      const char* fea_name = "x",
-      const char* fea_lens_name = "x_lens");
+      const char* x_name = "x",
+      const char* x_lens_name = "x_lens");
 
   RNNTQuerySampleLibrary(
-      const std::string& f_feas,
-      const std::string& f_fea_lens);
+      const std::string& f_x,
+      const std::string& f_x_lens);
 
   virtual ~RNNTQuerySampleLibrary() = default;
 
-  const std::string& Name() const override {
+  const std::string& Name() override {
     static const std::string name("RNN-T LibriSpeech QSL");
     return name;
   }
 
   size_t TotalSampleCount() override {
-    return feas_set_.size();
+    return x_set_.size();
   }
 
   void CheckSampleCount();
@@ -43,6 +43,7 @@ public:
 
   // LibriSpeech is small enough to be in Memory
   void LoadSamplesToRam(const std::vector<QuerySampleIndex>& samples) override {}
+
   void UnloadSamplesFromRam(
       const std::vector<QuerySampleIndex>& samples) override {}
 
@@ -50,8 +51,8 @@ public:
 
   Stack GetSample(QuerySampleIndex index) const {
     return {
-      feas_set_.at(index),
-      fea_lens_set_.at(index),
+      x_set_.at(index),
+      x_lens_set_.at(index),
     };
   }
 
@@ -59,20 +60,18 @@ public:
 
   // List of tensor of 1d
   // size_t GetFeatureLength(size_t index) const {
-    // return feas_set_[index].size(0);
+    // return x_set_[index].size(0);
   // }
 
   // List of tensor of 1d
   size_t GetFeatureLength(QuerySampleIndex index) const {
-    return feas_set_[index].size(0);
+    return x_set_[index].size(0);
   }
 
   // Sort LibriSpeech data for batching
-  // wav_lens: 23120 -> 239920
-  // fea_lens: 49 -> 500
   Queue_t Sort(
       const std::vector<QuerySample>& samples, bool preprocessor = true,
-      bool reverse = true, size_t minLength=23120, size_t maxLength=239920) const;
+      bool reverse = true) const;
 
   c10::Dict<at::IValue, at::IValue> GetDictFrom(const std::string& filename);
 
@@ -81,10 +80,13 @@ public:
   static TensorList GetTensorListFrom(
       c10::Dict<at::IValue, at::IValue>& dict,
       const char* name);
+  static Stack GetIValueListFrom(at::IValue value);
 
 private:
-  TensorList feas_set_;
-  TensorList fea_lens_set_;
+  TensorList x_set_;
+  TensorList x_lens_set_;
+  size_t minLength;
+  size_t maxLength;
 };
 
 }

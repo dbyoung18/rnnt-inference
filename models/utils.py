@@ -4,10 +4,13 @@ import os
 import torch
 
 
-LOG_LEVEL=int(os.environ['RNNT_LOG_LEVEL']) if 'RNNT_LOG_LEVEL' in os.environ else logging.INFO
-LOG_FORMAT="[%(filename)s:%(lineno)d %(levelname)s] %(message)s"
-logging.basicConfig(level=LOG_LEVEL, format=LOG_FORMAT)
+LOG_LEVEL = int(os.environ['RNNT_LOG_LEVEL']) if 'RNNT_LOG_LEVEL' in os.environ else logging.INFO
+LOG_FORMAT = logging.Formatter("[%(filename)s:%(lineno)d %(levelname)s] %(message)s")
 logger = logging.getLogger("RNNTLogger")
+logger.setLevel(LOG_LEVEL)
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(LOG_FORMAT)
+logger.addHandler(stream_handler)
 
 labels = [" ", "a", "b", "c", "d", "e", "f", "g", "h", "i", \
           "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", \
@@ -41,13 +44,15 @@ def migrate_state_dict(model, split_fc1=False):
     return migrated_state_dict
 
 def jit_module(module, to_freeze=True):
-    module = torch.jit.script(module)
+    jmodule = torch.jit.script(module)
     if to_freeze:
-        module = torch.jit._recursive.wrap_cpp_module(
-            torch._C._freeze_module(module._c))
+        fmodule = torch.jit._recursive.wrap_cpp_module(
+            torch._C._freeze_module(jmodule._c))
         # module = torch.jit.freeze(module)
-        torch._C._jit_pass_constant_propagation(module.graph)
-    return module
+        torch._C._jit_pass_constant_propagation(fmodule.graph)
+        return fmodule
+    else:
+        return jmodule
 
 def jit_model(model):
     for name, layer in model.transcription.named_children():

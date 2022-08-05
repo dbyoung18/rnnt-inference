@@ -9,10 +9,14 @@
 #include "torch_sut.hpp"
 #include "test_settings.h"
 
+std::map<std::string, mlperf::TestScenario> scenario_map = {
+  {"Offline", mlperf::TestScenario::Offline},
+  {"Server", mlperf::TestScenario::Server}};
+
 int main(int argc, char **argv) {
   cxxopts::Options opts (
     "rnnt_inference", "MLPerf Benchmark, RNN-T Inference");
-  //opts.allow_unrecognised_options();
+  // opts.allow_unrecognised_options();
   opts.add_options()
     ("m,model_file", "Torch Model File",
      cxxopts::value<std::string>())
@@ -40,6 +44,9 @@ int main(int argc, char **argv) {
 
     ("b,batch_size", "Offline Model Batch Size",
      cxxopts::value<int>()->default_value("1"))
+
+    ("perf_count", "Max running sample number",
+     cxxopts::value<int>()->default_value("2513"))
 
     ("disable-hyperthreading", "Whether system enabled hyper-threading or not",
      cxxopts::value<bool>()->default_value("false"))
@@ -71,6 +78,7 @@ int main(int argc, char **argv) {
   auto mlperf_conf = parsed_opts["mlperf_config"].as<std::string>();
   auto user_conf = parsed_opts["user_config"].as<std::string>();
   auto batch_size = parsed_opts["batch_size"].as<int>();
+  auto perf_count = parsed_opts["perf_count"].as<int>();
   auto disable_ht = parsed_opts["disable-hyperthreading"].as<bool>();
   auto test_scenario = parsed_opts["test_scenario"].as<std::string>();
   auto accuracy_mode = parsed_opts["accuracy"].as<bool>();
@@ -83,41 +91,22 @@ int main(int argc, char **argv) {
   mlperf::LogSettings logSettings;
   logSettings.log_output.outdir = output_dir;
 
-  if (test_scenario == "Offline") {
-    RNNTOfflineSUT sut(
-      model_file, sample_file, preprocessor_file,
-      inter_parallel, intra_parallel,  batch_size, !disable_ht,
-      profiler_flag, profiler_folder, preprocessor_flag);
+  RNNTSUT sut(
+    model_file, sample_file, preprocessor_file,
+    inter_parallel, intra_parallel,  batch_size, !disable_ht,
+    profiler_flag, profiler_folder, preprocessor_flag, test_scenario,
+    perf_count);
   
-    testSettings.scenario = mlperf::TestScenario::Offline;
-    testSettings.FromConfig(mlperf_conf, "rnnt", "Offline");
-    testSettings.FromConfig(user_conf, "rnnt", "Offline");
+  testSettings.scenario = scenario_map[test_scenario];
+  testSettings.FromConfig(mlperf_conf, "rnnt", test_scenario);
+  testSettings.FromConfig(user_conf, "rnnt", test_scenario);
 
-    if (accuracy_mode)
-      testSettings.mode = mlperf::TestMode::AccuracyOnly;
+  if (accuracy_mode)
+    testSettings.mode = mlperf::TestMode::AccuracyOnly;
 
-    std::cout << "Start Offline testing..." << std::endl;
-    mlperf::StartTest(&sut, sut.GetQSL(), testSettings, logSettings);
-    std::cout << "Testing done." << std::endl;
-
-  } else if (test_scenario == "Server") {
-    std::cout << "TODO: RNN-T Server Scenario" << std::endl;
-    // RNNTServerSUT server_sut(
-        // model_file, sample_file, inter_parallel,
-        // intra_parallel, batch_size, !disable_ht);
-
-    // testSettings.scenario = mlperf::TestScenario::Server;
-    // testSettings.FromConfig(mlperf_conf, "rnnt", "Server");
-    // testSettings.FromConfig(user_conf, "rnnt", "Server");
-
-    // if (accuracy_mode)
-      // testSettings.mode = mlperf::TestMode::AccuracyOnly;
-
-    // sleep(5);
-    // std::cout << "Start Server testing..." << std::endl;
-    // mlperf::StartTest(&server_sut, server_sut.GetQSL(), testSettings, logSettings);
-    // std::cout << "Testing done." << std::endl;
-  }
+  std::cout << "Start " << test_scenario << " testing..." << std::endl;
+  mlperf::StartTest(&sut, sut.GetQSL(), testSettings, logSettings);
+  std::cout << "Testing done." << std::endl;
 
   return 0;
 }

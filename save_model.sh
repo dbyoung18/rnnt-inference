@@ -8,7 +8,7 @@ set -x
 : ${MODEL_PATH=${4:-${WORK_DIR}/rnnt_calib.pt}}
 : ${MODE:=quant}
 : ${WAV:=true}
-: ${JIT:=false}
+: ${SAVE_JIT:=false}
 : ${DEBUG:=false}
 
 export PYTHONPATH=${PWD}:${PWD}/models/:${PYTHONPATH}
@@ -17,14 +17,13 @@ export RNNT_LOG_LEVEL=${LOG_LEVEL}
 SCRIPT_ARGS=" --batch_size ${BATCH_SIZE}"
 SCRIPT_ARGS+=" --model_path ${MODEL_PATH}"
 SCRIPT_ARGS+=" --run_mode ${MODE}"
-SCRIPT_ARGS+=" --split_fc1"
 if [[ ${WAV} == true ]]; then
   SCRIPT_ARGS+=" --dataset_dir ${WORK_DIR}/dev-clean-npy.pt --toml_path configs/rnnt.toml --enable_preprocess"
 else
   SCRIPT_ARGS+=" --dataset_dir ${WORK_DIR}/dev-clean-input.pt"
 fi
 
-[ ${JIT} == true ] && SCRIPT_ARGS+=" --jit"
+[ ${SAVE_JIT} == true ] && SCRIPT_ARGS+=" --save_jit"
 
 [ ${DEBUG} == "pdb" ] && EXEC_ARGS="ipdb3"
 [ ${DEBUG} == "gdb" ] && EXEC_ARGS="gdb --args python"

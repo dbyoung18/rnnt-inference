@@ -33,13 +33,11 @@ private:
 };
 
 
-class RNNTOfflineSUT : public mlperf::SystemUnderTest {
+class RNNTSUT : public mlperf::SystemUnderTest {
   using Queue_t = std::list<mlperf::QuerySample>;
-  // using Queue_t = std::forward_list<mlperf::QuerySample>
-  // using Queue_t = std::deque<mlperf::QuerySample>;
 public:
   // configure inter parallel and intra paralel
-  RNNTOfflineSUT (
+  RNNTSUT (
       const std::string& model_file,
       const std::string& samples_file,
       const std::string& preprocessor_file,
@@ -49,17 +47,19 @@ public:
       bool ht = true,
       bool profiler = false,
       const std::string& profiler_foler = "",
-      bool preprocessor = true
+      bool preprocessor = true,
+      std::string test_scenario = "Offline",
+      int perf_count = 2513
   );
 
-  ~RNNTOfflineSUT ();
+  ~RNNTSUT ();
 
   void IssueQuery(const std::vector<mlperf::QuerySample>& samples) override;
 
   void FlushQueries() override {}
 
   const std::string& Name() override {
-    static const std::string name("RNN-T Offline");
+    static const std::string name("RNN-T_" + test_scenario_ + "_SUT");
     return name;
   }
 
@@ -101,6 +101,8 @@ private:
   std::string profiler_folder_;
   // std::unique_ptr<ProfileRecord> guard_;
   bool preprocessor_flag_;
+  std::string test_scenario_;
+  size_t perf_count_;
 
   int rootProc(int index);
   void thInstance(int index);

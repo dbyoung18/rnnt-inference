@@ -227,7 +227,8 @@ class FilterbankFeatures(nn.Module):
         #    pad_amt = x.size(-1) % pad_to
         #    if pad_amt != 0:
         #        x = nn.functional.pad(x, (0, pad_to - pad_amt))
-        x = x.permute(2, 0, 1)
+        # TODO: eliminate contiguous
+        x = x.permute(2, 0, 1).contiguous()
         return x.to(dtype), x_lens
 
     @classmethod
