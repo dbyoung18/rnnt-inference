@@ -8,7 +8,7 @@ HOME_DIR=${2:-${PWD}}
 echo '==> Creating conda env'
 # conda env create -n ${CONDA_ENV} -f environment.yml --force -v
 conda env create -n ${CONDA_ENV}
-conda activate ${CONDA_ENV}
+source activate ${CONDA_ENV}
 
 pushd ${HOME_DIR}
 
@@ -56,9 +56,6 @@ popd
 popd
 
 echo '==> Building pytorch with mkl'
-#export MKL_DPCPP_ROOT=/opt/intel/oneapi/mkl/latest
-#export LD_LIBRARY_PATH=${MKL_DPCPP_ROOT}/lib:${MKL_DPCPP_ROOT}/lib64/:${MKL_DPCPP_ROOT}/lib/intel64:${LD_LIBRARY_PATH}
-#export LIBRARY_PATH=${MKL_DPCPP_ROOT}/lib:${MKL_DPCPP_ROOT}/lib64:${MKL_DPCPP_ROOT}/lib/intel64:${LIBRARY_PATH}
 export CMAKE_PREFIX_PATH=${CONDA_PREFIX:-"$(dirname $(which conda))/../"}
 export CMAKE_LIBRARY_PATH=${CMAKE_PREFIX_PATH}/lib
 export CMAKE_INCLUDE_PATH=${CMAKE_PREFIX_PATH}/include
@@ -74,7 +71,7 @@ pushd third_party/ideep/mkl-dnn
 git apply ${HOME_DIR}/patches/clang_mkl_dnn.patch
 popd
 git apply ${HOME_DIR}/patches/pytorch_official_1_12.patch
-CC=clang CXX=clang++ USE_CUDA=OFF DEBUG=1 python -m pip install -e .
+CC=clang CXX=clang++ USE_CUDA=OFF python -m pip install -e .
 popd
 
 echo '==> Building mlperf_plugins, C++ loadgen & SUT'

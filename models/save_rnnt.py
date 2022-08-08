@@ -33,7 +33,7 @@ def main():
     # create sut & qsl
     sut = PytorchSUT(args.model_path, args.dataset_dir, args.batch_size, args)
     # save preprocessor & model
-    suffix = f"_{args.run_mode}_jit_no_freeze" if args.save_jit else f"_{args.run_mode}"
+    suffix = f"_{args.run_mode}_jit" if args.save_jit else f"_{args.run_mode}"
     if args.save_jit:
         if args.enable_preprocess:
             print("==> JIT audio preprocessor...")

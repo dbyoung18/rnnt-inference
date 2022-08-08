@@ -121,7 +121,7 @@ void RNNTSUT::thInstance(int index) {
         auto wav_stack = qsl_.AssembleSamples(std::move(indices), preprocessor_flag_);
         auto pre_results = preprocessor_.inference_at(which, wav_stack);
         fea_stack = qsl_.GetIValueListFrom(pre_results);
-        //QuerySamplesComplete(samples, at::stack(tList[0], -1));
+        //QuerySamplesComplete(samples, at::stack(fea_stack[0].toTensor(), -1));
       } else {
         fea_stack = qsl_.AssembleSamples(std::move(indices), preprocessor_flag_);
       }
