@@ -32,7 +32,7 @@ elif [[ ${SCENARIO} == "Server" ]]; then
 fi
 
 SCRIPT_ARGS=" --test_scenario=${SCENARIO}"
-SCRIPT_ARGS+=" --model_file=${WORK_DIR}/rnnt_quant_jit_no_cf.pt"
+SCRIPT_ARGS+=" --model_file=${WORK_DIR}/rnnt_quant_jit.pt"
 SCRIPT_ARGS+=" --mlperf_config=${SUT_DIR}/inference/mlperf.conf"
 SCRIPT_ARGS+=" --user_config=${SUT_DIR}/configs/user.conf"
 SCRIPT_ARGS+=" --output_dir=${OUT_DIR}"
