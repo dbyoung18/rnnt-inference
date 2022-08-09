@@ -45,11 +45,11 @@ public:
       int intra_parallel,
       int batch,
       bool ht = true,
-      bool profiler = false,
-      const std::string& profiler_foler = "",
       bool preprocessor = true,
       std::string test_scenario = "Offline",
-      int perf_count = 2513
+      bool profiler = false,
+      const std::string& profiler_foler = "",
+      int profiler_iter = -1
   );
 
   ~RNNTSUT ();
@@ -90,19 +90,18 @@ private:
   Queue_t mQueue_;
   bool mStop_ {false};
 
+  std::vector<std::thread> mInstances_;
+  int nInstances_;
+  int nProcsPerInstance_;
   // Control over max samples a instance will peek
   size_t mThreshold_;
-
-  std::vector<std::thread> mInstances_;
-  int nProcsPerInstance_;
-  int nInstances_;
   bool mHt_;
-  bool profiler_flag_;
-  std::string profiler_folder_;
   // std::unique_ptr<ProfileRecord> guard_;
   bool preprocessor_flag_;
   std::string test_scenario_;
-  size_t perf_count_;
+  bool profiler_flag_;
+  std::string profiler_folder_;
+  size_t profiler_iter_;
 
   int rootProc(int index);
   void thInstance(int index);

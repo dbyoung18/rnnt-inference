@@ -45,9 +45,6 @@ int main(int argc, char **argv) {
     ("b,batch_size", "Offline Model Batch Size",
      cxxopts::value<int>()->default_value("1"))
 
-    ("perf_count", "Max running sample number",
-     cxxopts::value<int>()->default_value("2513"))
-
     ("disable-hyperthreading", "Whether system enabled hyper-threading or not",
      cxxopts::value<bool>()->default_value("false"))
 
@@ -59,6 +56,9 @@ int main(int argc, char **argv) {
 
     ("f,profiler_folder", "If profiler is True, output json in profiler_folder",
      cxxopts::value<std::string>()->default_value("logs"))
+
+    ("profiler_iter", "Profile iteration number",
+     cxxopts::value<int>()->default_value("-1"))
 
     ("preprocessor_file", "Audio Preprocessor File",
      cxxopts::value<std::string>())
@@ -78,12 +78,12 @@ int main(int argc, char **argv) {
   auto mlperf_conf = parsed_opts["mlperf_config"].as<std::string>();
   auto user_conf = parsed_opts["user_config"].as<std::string>();
   auto batch_size = parsed_opts["batch_size"].as<int>();
-  auto perf_count = parsed_opts["perf_count"].as<int>();
   auto disable_ht = parsed_opts["disable-hyperthreading"].as<bool>();
   auto test_scenario = parsed_opts["test_scenario"].as<std::string>();
   auto accuracy_mode = parsed_opts["accuracy"].as<bool>();
   auto profiler_flag = parsed_opts["profiler"].as<bool>();
   auto profiler_folder = parsed_opts["profiler_folder"].as<std::string>();
+  auto profiler_iter = parsed_opts["profiler_iter"].as<int>();
   auto preprocessor_flag = parsed_opts["preprocessor"].as<bool>();
   auto preprocessor_file = parsed_opts["preprocessor_file"].as<std::string>();
 
@@ -92,10 +92,10 @@ int main(int argc, char **argv) {
   logSettings.log_output.outdir = output_dir;
 
   RNNTSUT sut(
-    model_file, sample_file, preprocessor_file,
-    inter_parallel, intra_parallel,  batch_size, !disable_ht,
-    profiler_flag, profiler_folder, preprocessor_flag, test_scenario,
-    perf_count);
+    sample_file, model_file, preprocessor_file,
+    inter_parallel, intra_parallel, batch_size, !disable_ht,
+    preprocessor_flag, test_scenario,
+    profiler_flag, profiler_folder, profiler_iter);
   
   testSettings.scenario = scenario_map[test_scenario];
   testSettings.FromConfig(mlperf_conf, "rnnt", test_scenario);
