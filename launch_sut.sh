@@ -5,8 +5,8 @@ export LD_PRELOAD=${CONDA_PREFIX}/lib/libjemalloc.so
 export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:percpu,metadata_thp:always,dirty_decay_ms:9000000000,muzzy_decay_ms:9000000000";
 
 : ${BS=${1:-128}}
-: ${INTER:=2}
-: ${INTRA:=56}
+: ${INTER:=28}
+: ${INTRA:=4}
 : ${SCENARIO=${2:-"Offline"}}
 : ${ACCURACY:=false}
 : ${PROFILE:=false}

@@ -94,9 +94,11 @@ public:
     auto x_lens = inputs[1];
     // 1. pre_rnn
     auto quant_x = pre_quantizer({x}).toTensor();
-    auto hx = torch::zeros({pre_num_layers, quant_x.size(1), trans_hidden_size},
+    auto hx = torch::zeros(
+        {pre_num_layers, quant_x.size(1), trans_hidden_size},
         torch::dtype(torch::kInt8));
-    auto cx = torch::zeros({pre_num_layers, quant_x.size(1), trans_hidden_size},
+    auto cx = torch::zeros(
+        {pre_num_layers, quant_x.size(1), trans_hidden_size},
         torch::dtype(torch::kFloat32));
     auto y1 = lstm_forward(pre_rnn, quant_x, hx, cx, pre_num_layers);
     // 2. stack_time

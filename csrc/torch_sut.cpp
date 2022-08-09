@@ -26,22 +26,22 @@ ProfileRecord::ProfileRecord(
 }
 
 RNNTSUT::RNNTSUT(
-    const std::string& model_file,
     const std::string& sample_file,
+    const std::string& model_file,
     const std::string& preprocessor_file,
     int inter_parallel,
     int intra_parallel,
     int batch, bool ht,
-    bool profiler,
-    const std::string& profiler_folder,
     bool preprocessor,
     std::string test_scenario,
-    int perf_count
-  ) : qsl_(sample_file), model_(model_file),
-  preprocessor_(preprocessor_file), mThreshold_(batch),
-  nProcsPerInstance_(intra_parallel), nInstances_(inter_parallel), mHt_(ht),
-  profiler_flag_(profiler), profiler_folder_(profiler_folder),
-  preprocessor_flag_(preprocessor), test_scenario_(test_scenario), perf_count_(perf_count) {
+    bool profiler,
+    const std::string& profiler_folder,
+    int profiler_iter
+  ) : qsl_(sample_file), model_(model_file), preprocessor_(preprocessor_file),
+  nInstances_(inter_parallel), nProcsPerInstance_(intra_parallel),
+  mThreshold_(batch), mHt_(ht), preprocessor_flag_(preprocessor),
+  test_scenario_(test_scenario), profiler_flag_(profiler),
+  profiler_folder_(profiler_folder), profiler_iter_(profiler_iter) {
 
   auto nMaxProc = kmp::KMPLauncher::getMaxProc();
 
@@ -121,7 +121,9 @@ void RNNTSUT::thInstance(int index) {
         auto wav_stack = qsl_.AssembleSamples(std::move(indices), preprocessor_flag_);
         auto pre_results = preprocessor_.inference_at(which, wav_stack);
         fea_stack = qsl_.GetIValueListFrom(pre_results);
-        //QuerySamplesComplete(samples, at::stack(fea_stack[0].toTensor(), -1));
+        // Test preprocessor only(response {T, N, C})
+        //QuerySamplesComplete(samples, fea_stack[0].toTensor());
+        //continue;
       } else {
         fea_stack = qsl_.AssembleSamples(std::move(indices), preprocessor_flag_);
       }
@@ -129,7 +131,7 @@ void RNNTSUT::thInstance(int index) {
       QuerySamplesComplete(samples, results);
 
       nIteration += 1;
-      if (nIteration * mThreshold_ >= perf_count_)
+      if (profiler_iter_ != -1 && nIteration >= profiler_iter_)
         guard_->~ProfileRecord();
     }
   }
@@ -168,8 +170,8 @@ void RNNTSUT::QuerySamplesComplete(
 
   for (size_t i = 0; i < samples.size(); ++i) {
     responses[i].id = samples[i].id;
-    responses[i].data = reinterpret_cast<uintptr_t>(results[i].data_ptr());
-    responses[i].size = results[i].nbytes();
+    responses[i].data = reinterpret_cast<uintptr_t>(results[0][i].data_ptr());
+    responses[i].size = results[0][i].nbytes();
   }
   mlperf::QuerySamplesComplete(responses.data(), responses.size());
 }
