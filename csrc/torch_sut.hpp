@@ -102,6 +102,7 @@ private:
   bool profiler_flag_;
   std::string profiler_folder_;
   size_t profiler_iter_;
+  bool batch_sort_;
 
   int rootProc(int index);
   void thInstance(int index);

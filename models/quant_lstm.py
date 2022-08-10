@@ -182,7 +182,7 @@ class iLSTMCell(QuantLSTMCell):
             yt = ht.clone()
         else:
             yt = self.output_quantizer(ht)
-        ht = self.input_quantizer(ht)
+        quant_ht = self.input_quantizer(ht)
         # yt = ht
-        return yt, ht, ct
+        return yt, quant_ht, ct
 

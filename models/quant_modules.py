@@ -5,12 +5,12 @@ import _C as P
 from torch import Tensor
 
 
-def round_and_clamp(input, _min: float, _max: float):
-    return torch.clamp(input.round(), _min, _max)
+def round_and_clamp(inputs: Tensor, _min: float, _max: float):
+    return torch.clamp(inputs.round(), _min, _max)
 
 
-def clamp_and_round(input, _min: float, _max: float):
-    return torch.round(torch.clamp(input, _min, _max))
+def clamp_and_round(inputs: Tensor, _min: float, _max: float):
+    return torch.round(torch.clamp(inputs, _min, _max))
 
 
 class QuantDescriptor():
@@ -70,7 +70,7 @@ class TensorQuantizer(nn.Module):
         self._scale = torch.tensor(0.)
         self._name = kwargs.pop("name", "TensorQuantizer")
         self._update_amax = quant_desc.update_amax  # dynamic
-        self._track_amax = True
+        self._track_amax = False
         self._amaxs = []
 
     @property
@@ -96,16 +96,15 @@ class TensorQuantizer(nn.Module):
     def scale(self, value):
         self._scale = value
 
+    @torch.jit.ignore
     def calib_amax(self, inputs):
         cur_amax = inputs.abs().max()
         self.amax = torch.max(self.amax, cur_amax)
-        # if self._track_amax:
-            # self._amaxs.append(cur_amax)
+        if self._track_amax:
+            self._amaxs.append(cur_amax)
 
     @torch.jit.export
     def _quant_forward(self, inputs: Tensor) -> Tensor:
-        self.scale = self._max_bound / self.amax
-        # print(self.scale)
         outputs = round_and_clamp(inputs * self.scale, self._min_bound, self._max_bound)
         outputs = outputs.type(torch.int8)
         return outputs
@@ -119,7 +118,6 @@ class TensorQuantizer(nn.Module):
                 self.amax = torch.max(inputs.abs())
 
         self.scale = self._max_bound / self.amax
-        # print(self.scale)
         outputs = round_and_clamp(inputs * self.scale, self._min_bound, self._max_bound)
         outputs /= self.scale
         return outputs

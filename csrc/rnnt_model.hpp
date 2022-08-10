@@ -50,45 +50,37 @@ public:
 
   std::vector<at::Tensor> lstm_layer_forward(Module lstm_cell, at::Tensor x,
       at::Tensor hx, at::Tensor cx, bool last_layer) {
-    at::Tensor cell_y;
     std::vector<at::Tensor> y_list;
     for (int64_t step = 0; step < x.sizes()[0]; step++) {
       auto outputs = lstm_cell({x[step], hx, cx, last_layer}).toTensorList();
-      cell_y = outputs[0];
+      y_list.emplace_back(outputs[0]);
       hx = outputs[1];
       cx = outputs[2];
-      y_list.push_back(cell_y);
     }
-    auto y = at::stack(y_list, 0);
-    return {y, hx, cx};
+    return {at::stack(y_list, 0), hx, cx};
   }
 
   std::vector<at::Tensor> lstm_forward(Module lstm, at::Tensor x,
       at::Tensor hx, at::Tensor cx, int64_t num_layers) {
-    auto module_ptr = lstm.children().begin();
-    std::vector<at::Tensor> hy_list(num_layers);
-    std::vector<at::Tensor> cy_list(num_layers);
+    auto cell_ptr = lstm.children().begin();
+    std::vector<at::Tensor> hy_list, cy_list;
     for (int64_t layer = 0; layer < num_layers; layer++) {
-      auto lstm_cell = *module_ptr;
       auto outputs = lstm_layer_forward(
-          lstm_cell, x, hx[layer], cx[layer], layer==(num_layers-1));
+          *cell_ptr++, x, hx[layer], cx[layer], layer==(num_layers-1));
       x = outputs[0];
-      hy_list[layer] = outputs[1];
-      cy_list[layer] = outputs[2];
-      module_ptr = ++module_ptr;
+      hy_list.emplace_back(outputs[1]);
+      cy_list.emplace_back(outputs[2]);
     }
-    auto hy = at::stack(hy_list, 0);
-    auto cy = at::stack(cy_list, 0);
-    return {x, hy, cy};
+    return {x, at::stack(hy_list, 0), at::stack(cy_list, 0)};
   }
 
   std::vector<at::Tensor> trans_forward(Module transcription, Stack inputs) {
-    auto children = transcription.children();
-    auto pre_rnn = *children.begin();
-    auto stack_time = *(++children.begin());
-    auto post_rnn = *(++++children.begin());
-    auto pre_quantizer = *(++++++children.begin());
-    auto post_quantizer = *(++++++++children.begin());
+    auto module_ptr = transcription.children().begin();
+    auto pre_rnn = *module_ptr++;
+    auto stack_time = *module_ptr++;
+    auto post_rnn = *module_ptr++;
+    auto pre_quantizer = *module_ptr++;
+    auto post_quantizer = *module_ptr;
 
     auto x = inputs[0];
     auto x_lens = inputs[1];
@@ -116,11 +108,10 @@ public:
   }
 
   std::vector<std::vector<int64_t>> greedy_decode(Module model, Stack inputs) {
-    auto children = model.children();
-    auto transcription = *children.begin();
-    auto prediction = *(++children.begin());
-    auto joint = *(++++children.begin());
-    std::vector<torch::jit::Module> modules;
+    auto module_ptr = model.children().begin();
+    auto transcription = *module_ptr++;
+    auto prediction = *module_ptr++;
+    auto joint = *module_ptr;
 
     auto trans_res = trans_forward(transcription, inputs);
     auto f = trans_res[0];

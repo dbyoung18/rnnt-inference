@@ -109,8 +109,7 @@ void RNNTQuerySampleLibrary::CheckSampleCount() {
 // For length minLength ~ maxLength, each with a bucket of std::list
 //
 Queue_t RNNTQuerySampleLibrary::Sort(
-    const std::vector<QuerySample>& samples, bool preprocessor,
-    bool reverse) const {
+    const std::vector<QuerySample>& samples, bool reverse) const {
   const auto lengthOffset = minLength;
   const auto nBucket = maxLength - lengthOffset + 1;
 
@@ -147,18 +146,16 @@ Queue_t RNNTQuerySampleLibrary::Sort(
 Stack RNNTQuerySampleLibrary::AssembleSamples(
     std::vector<QuerySampleIndex> indices, bool preprocessor) const {
   TensorList x_list, x_lens_list;
-
   x_list.reserve(indices.size());
   x_lens_list.reserve(indices.size());
-
-  int64_t maxLength = 0;
- 
+  // Assemble x_lens
+  for (auto index : indices)
+    x_lens_list.emplace_back(x_lens_set_[index]);
+  auto x_lens = at::cat(x_lens_list);
+  auto maxLength = at::max(x_lens).item().toInt();
+  // Assemble x
   for (auto index : indices) {
     auto x = x_set_[index];
-    auto x_lens = x_lens_set_[index];
- 
-    if (maxLength == 0)
-      maxLength = x.size(0);
 
     auto len = x.size(0);
     if (len < maxLength) {  // Padding needed
@@ -168,18 +165,14 @@ Stack RNNTQuerySampleLibrary::AssembleSamples(
       else
         newShape = {maxLength, x.size(1)};
 
-      auto opts = at::TensorOptions().dtype<float>().memory_format(at::MemoryFormat::Contiguous);
-
-      auto padded_x = at::zeros(newShape, opts);
+      auto padded_x = at::zeros(newShape, x.options());
       padded_x.narrow(0, 0, len).copy_(x);
       x_list.emplace_back(padded_x);
     } else {
       x_list.emplace_back(x);
     }
-    x_lens_list.emplace_back(x_lens);
   }
-  auto x = preprocessor ? at::stack(x_list, 0) : at::stack(x_list, 1);  // {N, T} or {T, N, C}
-  auto x_lens = at::cat(x_lens_list);
+  auto x = at::stack(x_list, -2);  // {N, T} or {T, N, C}
   return Stack {x, x_lens};
 }
 
