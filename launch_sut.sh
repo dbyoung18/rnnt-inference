@@ -50,7 +50,7 @@ fi
 [ ${PROFILE} == true ] && SCRIPT_ARGS+=" --profiler"
 [ ${ACCURACY} == true ] && SCRIPT_ARGS+=" --accuracy"
 if [[ ${ACCURACY} != true && ${COUNT} != "" ]]; then
-  SCRIPT_ARGS+=" --perf_count ${COUNT}"
+  SCRIPT_ARGS+=" --profiler_iter ${COUNT}"
 fi
 
 [ ${DEBUG} == "gdb" ] && EXEC_ARGS="gdb --args"

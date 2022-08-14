@@ -70,8 +70,7 @@ public:
 
   // Sort LibriSpeech data for batching
   Queue_t Sort(
-      const std::vector<QuerySample>& samples, bool preprocessor = true,
-      bool reverse = true) const;
+      const std::vector<QuerySample>& samples, bool reverse = true) const;
 
   c10::Dict<at::IValue, at::IValue> GetDictFrom(const std::string& filename);
 

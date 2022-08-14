@@ -51,6 +51,8 @@ RNNTSUT::RNNTSUT(
   // Construct instances
   for (int i = 0; i < nInstances_; ++ i)
     mInstances_.emplace_back(&RNNTSUT::thInstance, this, i);
+
+  batch_sort_ = (test_scenario == "Offline");
 }
 
 //
@@ -139,9 +141,9 @@ void RNNTSUT::thInstance(int index) {
 
 void RNNTSUT::IssueQuery(const std::vector<mlperf::QuerySample>& samples) {
   std::unique_lock<std::mutex> l(mtx_);
-  if (test_scenario_ == "Offline") {
+  if (batch_sort_) {
     // Parallel sort samples into a queue
-    mQueue_ = qsl_.Sort(samples, preprocessor_flag_);
+    mQueue_ = qsl_.Sort(samples);
   } else {
     for (auto sample : samples)
       mQueue_.emplace_back(sample);
