@@ -123,9 +123,11 @@ void RNNTSUT::thInstance(int index) {
         auto wav_stack = qsl_.AssembleSamples(std::move(indices), preprocessor_flag_);
         auto pre_results = preprocessor_.inference_at(which, wav_stack);
         fea_stack = qsl_.GetIValueListFrom(pre_results);
-        // Test preprocessor only(response {T, N, C})
+        // Test preprocessor only(response {N, C, T})
         //QuerySamplesComplete(samples, fea_stack[0].toTensor());
         //continue;
+        // {N, C, T} -> {T, N, C}
+        fea_stack[0] = fea_stack[0].toTensor().permute({2, 0, 1}).contiguous();
       } else {
         fea_stack = qsl_.AssembleSamples(std::move(indices), preprocessor_flag_);
       }
@@ -172,8 +174,8 @@ void RNNTSUT::QuerySamplesComplete(
 
   for (size_t i = 0; i < samples.size(); ++i) {
     responses[i].id = samples[i].id;
-    responses[i].data = reinterpret_cast<uintptr_t>(results[0][i].data_ptr());
-    responses[i].size = results[0][i].nbytes();
+    responses[i].data = reinterpret_cast<uintptr_t>(results[i].data_ptr());
+    responses[i].size = results[i].nbytes();
   }
   mlperf::QuerySamplesComplete(responses.data(), responses.size());
 }
