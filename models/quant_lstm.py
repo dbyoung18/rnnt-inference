@@ -122,8 +122,7 @@ class QuantLSTMCell(nn.LSTMCell):
 
     def _quant_parameters(self) -> None:
         self.weight_quantizer.amax = torch.max(
-                torch.cat([self.weight_ih, self.weight_hh], 1).abs())
-        self.weight_quantizer.scale = self.weight_quantizer._max_bound / self.weight_quantizer.amax
+            torch.cat([self.weight_ih, self.weight_hh], 1).abs())
         self.weight_ih = Parameter(
             self.weight_quantizer(self.weight_ih), requires_grad=False)
         self.weight_hh = Parameter(
@@ -153,8 +152,7 @@ class iLSTMCell(QuantLSTMCell):
 
     def _quant_parameters(self) -> None:
         self.weight_quantizer.amax = torch.max(
-                torch.cat([self.weight_ih, self.weight_hh], 1).abs())
-        self.weight_quantizer.scale = self.weight_quantizer._max_bound / self.weight_quantizer.amax
+            torch.cat([self.weight_ih, self.weight_hh], 1).abs())
         self.weight_ih = Parameter(
             self.weight_quantizer._quant_forward(self.weight_ih), requires_grad=False)
         self.weight_hh = Parameter(

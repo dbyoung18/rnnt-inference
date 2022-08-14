@@ -117,7 +117,6 @@ class TensorQuantizer(nn.Module):
             else:
                 self.amax = torch.max(inputs.abs())
 
-        self.scale = self._max_bound / self.amax
         outputs = round_and_clamp(inputs * self.scale, self._min_bound, self._max_bound)
         outputs /= self.scale
         return outputs

@@ -16,6 +16,8 @@ def parse_args():
     parser.add_argument("--dataset_dir", type=str, required=True)
     parser.add_argument("--run_mode", default="calib",
         choices=["f32", "calib", "quant", "fake_quant"], help="run_mode, default calib")
+    parser.add_argument("--load_jit", action="store_true", help="load jit")
+    parser.add_argument("--save_jit", action="store_true", help="save jit")
     parser.add_argument("--enable_preprocess", action="store_true", help="enable audio preprocess")
     args = parser.parse_args()
     return args
