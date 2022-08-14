@@ -20,7 +20,7 @@ def seq_to_sen(seq):
     sen = "".join([labels[idx] for idx in seq])
     return sen
 
-def migrate_state_dict(model, split_fc1=False):
+def migrate_state_dict(model, split_fc1=True):
     state_dict = model["state_dict"] if "state_dict" in model else model
     migrated_state_dict = {}
     for key, value in state_dict.items():
