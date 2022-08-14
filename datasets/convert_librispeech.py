@@ -106,7 +106,7 @@ def preprocess_dataset(args, name, data_layer, data_preprocessor):
         wav_lens.append(data[1])
 
         fea, fea_len = data_preprocessor(data[0], data[1])
-        feas.append(fea.squeeze().transpose(0, 1).contiguous())
+        feas.append(fea.squeeze().contiguous())
         fea_lens.append(fea_len)
 
     data_wav = {"x": wavs, "x_lens": wav_lens}
