@@ -60,6 +60,8 @@ class PytorchSUT:
                 wav_lens = torch.tensor(
                     [self.qsl[idx][1] for idx in batch_idx])
                 feas, fea_lens = self.preprocessor(wavs, wav_lens)
+                # {N, C, T} -> {T, N, C}
+                feas = feas.permute(2, 0, 1).contiguous()
             else:
                 feas = torch.nn.utils.rnn.pad_sequence(
                     [self.qsl[idx][0] for idx in batch_idx])
