@@ -94,7 +94,6 @@ class FilterbankFeatures(nn.Module):
                  max_duration=16.7,
                  frame_splicing=1):
         super(FilterbankFeatures, self).__init__()
-#        print("PADDING: {}".format(pad_to))
 
         torch_windows = {
             'hann': torch.hann_window,
@@ -152,10 +151,7 @@ class FilterbankFeatures(nn.Module):
             x += self.dither * torch.randn_like(x)
 
         # do preemphasis
-        # Ideally, we would mask immediately after this... Ugh :(
-        if self.preemph is not None:
-            x = torch.cat((x[:, 0].unsqueeze(1), x[:, 1:] - self.preemph * x[:, :-1]),
-                          dim=1)
+        x = torch.ops.intel_mlperf.preemphasis(x, coeff=self.preemph)
 
         # do stft
         x = torch.stft(x, n_fft=self.n_fft, hop_length=self.hop_length,
@@ -176,58 +172,11 @@ class FilterbankFeatures(nn.Module):
             x = torch.log(x + 1e-20)
 
         # frame splicing if required
-        if self.frame_splicing > 1:
-            seq = [x]
-            for n in range(1, self.frame_splicing):
-                tmp = torch.zeros_like(x)
-                tmp[:, :, :-n] = x[:, :, n:]
-                seq.append(tmp)
-            x = torch.cat(seq, dim=1)[:, :, ::self.frame_splicing]
+        x = torch.ops.intel_mlperf.frame_splicing(x, self.frame_splicing)
 
         # normalize if required
-        constant = 1e-5
-        if self.normalize == "per_feature":
-            x_mean = torch.zeros((x_lens.shape[0], x.shape[1]), dtype=x.dtype,
-                                 device=x.device)
-            x_std = torch.zeros((x_lens.shape[0], x.shape[1]), dtype=x.dtype,
-                                device=x.device)
-            for i in range(x.shape[0]):
-                x_mean[i, :] = x[i, :, :x_lens[i]].mean(dim=1)
-                x_std[i, :] = x[i, :, :x_lens[i]].std(dim=1)
-                # make sure x_std is not zero
-                x_std += constant
-            x = (x - x_mean.unsqueeze(2)) / x_std.unsqueeze(2)
-        elif self.normalize == "all_features":
-            x_mean = torch.zeros(x_lens.shape, dtype=x.dtype, device=x.device)
-            x_std = torch.zeros(x_lens.shape, dtype=x.dtype, device=x.device)
-            for i in range(x.shape[0]):
-                x_mean[i] = x[i, :, :x_lens[i].item()].mean()
-                x_std[i] = x[i, :, :x_lens[i].item()].std()
-                # make sure x_std is not zero
-                x_std += constant
-            x = (x - x_mean.view(-1, 1, 1)) / x_std.view(-1, 1, 1)
-        else:
-            x = x
+        x = torch.ops.intel_mlperf.i_layernorm_unpad(x, torch.ones_like(x), torch.zeros_like(x), x_lens, 1e-12, unbiased=1)
 
-        # Hmmm... They don't do any masking anymore. Seems concerning!
-
-        # mask to zero any values beyond seq_len in batch, pad to multiple of `pad_to` (for efficiency)
-        # max_len = x.size(-1)
-        x = x[:, :, :x_lens.max()]   # rnnt loss requires lengths to match
-        # mask = torch.arange(max_len).to(seq_len.dtype).to(x.device).expand(x.size(0),
-        #                                                                   max_len) >= seq_len.unsqueeze(1)
-
-        # x = x.masked_fill(mask.unsqueeze(1).to(device=x.device), 0)
-        pad_to = self.pad_to
-        if pad_to != 0:
-            raise NotImplementedError()
-        # if pad_to == "max":
-        #    x = nn.functional.pad(x, (0, self.max_length - x.size(-1)))
-        # elif pad_to > 0:
-        #    pad_amt = x.size(-1) % pad_to
-        #    if pad_amt != 0:
-        #        x = nn.functional.pad(x, (0, pad_to - pad_amt))
-        # TODO: eliminate contiguous
         return x.to(dtype), x_lens
 
     @classmethod
