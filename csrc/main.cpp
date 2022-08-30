@@ -17,59 +17,58 @@ int main(int argc, char **argv) {
   cxxopts::Options opts (
     "rnnt_inference", "MLPerf Benchmark, RNN-T Inference");
   // opts.allow_unrecognised_options();
-  opts.add_options()
-    ("m,model_file", "Torch Model File",
-     cxxopts::value<std::string>())
+  opts.add_options(
+      "", {{"m,model_file", "Torch Model File", cxxopts::value<std::string>()},
 
-    ("s,sample_file", "LibriSpeech Sample File",
-     cxxopts::value<std::string>())
+           {"s,sample_file", "LibriSpeech Sample File",
+            cxxopts::value<std::string>()},
 
-    ("k,test_scenario", "Test scenario [Offline, Server]",
-     cxxopts::value<std::string>()->default_value("Offline"))
+           {"k,test_scenario", "Test scenario [Offline, Server]",
+            cxxopts::value<std::string>()->default_value("Offline")},
 
-    ("n,inter_parallel", "Instance Number",
-     cxxopts::value<int>()->default_value("1"))
+           {"n,inter_parallel", "Instance Number",
+            cxxopts::value<int>()->default_value("1")},
 
-    ("j,intra_parallel", "Thread Number Per-Instance",
-     cxxopts::value<int>()->default_value("4"))
+           {"j,intra_parallel", "Thread Number Per-Instance",
+            cxxopts::value<int>()->default_value("4")},
 
-    ("c,mlperf_config", "Configuration File for LoadGen",
-     cxxopts::value<std::string>()->default_value("mlperf.conf"))
+           {"c,mlperf_config", "Configuration File for LoadGen",
+            cxxopts::value<std::string>()->default_value("mlperf.conf")},
 
-    ("u,user_config", "User Configuration for LoadGen",
-     cxxopts::value<std::string>()->default_value("user.conf"))
+           {"u,user_config", "User Configuration for LoadGen",
+            cxxopts::value<std::string>()->default_value("user.conf")},
 
-    ("o,output_dir", "Test Output Directory",
-     cxxopts::value<std::string>()->default_value("mlperf_output"))
+           {"o,output_dir", "Test Output Directory",
+            cxxopts::value<std::string>()->default_value("mlperf_output")},
 
-    ("b,batch_size", "Offline Model Batch Size",
-     cxxopts::value<int>()->default_value("1"))
+           {"b,batch_size", "Offline Model Batch Size",
+            cxxopts::value<int>()->default_value("1")},
 
-    ("split_len", "Sequence split len",
-     cxxopts::value<int>()->default_value("-1"))
+           {"split_len", "Sequence split len",
+            cxxopts::value<int>()->default_value("-1")},
 
-    ("disable-hyperthreading", "Whether system enabled hyper-threading or not",
-     cxxopts::value<bool>()->default_value("false"))
+           {"disable-hyperthreading",
+            "Whether system enabled hyper-threading or not",
+            cxxopts::value<bool>()->default_value("false")},
 
-    ("a,accuracy", "Run test in accuracy mode instead of performance",
-     cxxopts::value<bool>()->default_value("false"))
+           {"a,accuracy", "Run test in accuracy mode instead of performance",
+            cxxopts::value<bool>()->default_value("false")},
 
-    ("p,profiler", "Whether output trace json or not",
-     cxxopts::value<bool>()->default_value("false"))
+           {"p,profiler", "Whether output trace json or not",
+            cxxopts::value<bool>()->default_value("false")},
 
-    ("f,profiler_folder", "If profiler is True, output json in profiler_folder",
-     cxxopts::value<std::string>()->default_value("logs"))
+           {"f,profiler_folder",
+            "If profiler is True, output json in profiler_folder",
+            cxxopts::value<std::string>()->default_value("logs")},
 
-    ("profiler_iter", "Profile iteration number",
-     cxxopts::value<int>()->default_value("-1"))
+           {"profiler_iter", "Profile iteration number",
+            cxxopts::value<int>()->default_value("-1")},
 
-    ("preprocessor_file", "Audio Preprocessor File",
-     cxxopts::value<std::string>())
+           {"preprocessor_file", "Audio Preprocessor File",
+            cxxopts::value<std::string>()},
 
-    ("preprocessor", "Whether enbale audio preprocess or not",
-     cxxopts::value<bool>()->default_value("false"))
-
-    ;
+           {"preprocessor", "Whether enbale audio preprocess or not",
+            cxxopts::value<bool>()->default_value("false")}});
 
   auto parsed_opts = opts.parse(argc, argv);
 
