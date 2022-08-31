@@ -204,7 +204,7 @@ class Consumer(mp.Process):
             return True
 
         results = self.inference(next_task.query_idx_list)
-        for id, res in zip(next_task.query_id_list, results)
+        for id, res in zip(next_task.query_id_list, results):
             self.result_queue.put(Output(id, trans))
         self.task_queue.task_done()
         return True
