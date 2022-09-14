@@ -45,6 +45,9 @@ int main(int argc, char **argv) {
     ("b,batch_size", "Offline Model Batch Size",
      cxxopts::value<int>()->default_value("1"))
 
+    ("split_len", "Sequence split len",
+     cxxopts::value<int>()->default_value("-1"))
+
     ("disable-hyperthreading", "Whether system enabled hyper-threading or not",
      cxxopts::value<bool>()->default_value("false"))
 
@@ -78,6 +81,7 @@ int main(int argc, char **argv) {
   auto mlperf_conf = parsed_opts["mlperf_config"].as<std::string>();
   auto user_conf = parsed_opts["user_config"].as<std::string>();
   auto batch_size = parsed_opts["batch_size"].as<int>();
+  auto split_len = parsed_opts["split_len"].as<int>();
   auto disable_ht = parsed_opts["disable-hyperthreading"].as<bool>();
   auto test_scenario = parsed_opts["test_scenario"].as<std::string>();
   auto accuracy_mode = parsed_opts["accuracy"].as<bool>();
@@ -93,7 +97,7 @@ int main(int argc, char **argv) {
 
   RNNTSUT sut(
     sample_file, model_file, preprocessor_file,
-    inter_parallel, intra_parallel, batch_size, !disable_ht,
+    inter_parallel, intra_parallel, batch_size, split_len, !disable_ht,
     preprocessor_flag, test_scenario,
     profiler_flag, profiler_folder, profiler_iter);
   

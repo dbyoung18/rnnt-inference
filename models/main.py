@@ -1,10 +1,11 @@
-import argparse
+import arguments
 import mlperf_loadgen as lg
 import os
 import subprocess
 
 from eval_accuracy import eval_acc
 from pytorch_sut import PytorchSUT
+from tqdm import tqdm
 from utils import *
 
 scenario_map = {
@@ -13,65 +14,59 @@ scenario_map = {
     "Server": lg.TestScenario.Server,
 }
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--perf_count", type=int, default=None,
-        help="number of samples")
-    parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument("--scenario", default="Offline",
-        choices=["SingleStream", "Offline", "Server"], help="Scenario")
-    parser.add_argument("--mlperf_conf", default="../configs/mlperf.conf",
-        help="mlperf rules config")
-    parser.add_argument("--user_conf", default="../configs/user.conf",
-        help="user config for user LoadGen settings such as target QPS")
-    parser.add_argument("--toml_path", type=str, default="../configs/rnnt.toml")
-    parser.add_argument("--model_path", type=str, default="work_dir/rnnt.pt")
-    parser.add_argument("--preprocessor_path", type=str,
-        default="work_dir/preprocesspr.pt")
-    parser.add_argument("--manifest_path", type=str, required=True)
-    parser.add_argument("--dataset_dir", type=str, required=True)
-    parser.add_argument("--log_dir", type=str, required=True)
-    parser.add_argument("--run_mode", default=None,
-        choices=[None, "f32", "calib", "quant", "fake_quant"],
-        help="run_mode, default None(fp32)")
-    parser.add_argument("--load_jit", action="store_true", help="load jit model")
-    parser.add_argument("--save_jit", action="store_true", help="save jit model")
-    parser.add_argument("--enable_preprocess", action="store_true",
-        help="enable audio preprocess")
-    parser.add_argument("--accuracy", action="store_true",
-        help="enable accuracy evaluation")
-    args = parser.parse_args()
-    return args
 
 def main():
-    args = parse_args()
-    # create sut
-    sut = PytorchSUT(args.model_path, args.dataset_dir, args.batch_size, args)
-    # set cfg
-    settings = lg.TestSettings()
-    settings.scenario = scenario_map[args.scenario]
-    settings.FromConfig(args.mlperf_conf, "rnnt", args.scenario)
-    settings.FromConfig(args.user_conf, "rnnt", args.scenario)
-    settings.mode = lg.TestMode.AccuracyOnly if args.accuracy \
-        else lg.TestMode.PerformanceOnly
-    # set log
-    os.makedirs(args.log_dir, exist_ok=True)
-    log_output_settings = lg.LogOutputSettings()
-    log_output_settings.outdir = args.log_dir
-    log_output_settings.copy_summary_to_stdout = True
-    log_settings = lg.LogSettings()
-    log_settings.log_output = log_output_settings
-    print("==> Running loadgen test")
-    lg.StartTestWithLogSettings(sut.sut, sut.qsl.qsl, settings, log_settings)
-    # eval accuracy
-    if args.accuracy:
-        print(f"==> Evaluating accuracy")
-        log_path = os.path.join(args.log_dir, "mlperf_log_accuracy.json")
-        acc_path = os.path.join(os.getcwd(), "eval_accuracy.py")
-        cmd = f"python {acc_path} --log_path {log_path} --manifest_path {args.manifest_path}"
-        print(f"==> Running accuracy script: {cmd}")
-        subprocess.check_call(cmd, shell=True)
-    print("Done!")
+    args = arguments.parse_args()
+    # 1. calibration
+    if args.calibration:
+        sut = PytorchSUT(args.model_path, args.calib_dataset_dir, args.batch_size, "calib", args)
+        print("==> Running calibration...")
+        for i in tqdm(range(0, sut.qsl.count, args.batch_size)):
+            results = sut.inference(range(i, min(i+args.batch_size, sut.qsl.count)))
+            for j in range(len(results)):
+                logger.debug(f"{i+j}::{seq_to_sen(results[j])}")
+        args.model_path = os.path.join(os.path.dirname(args.model_path), "rnnt_calib.pt")
+        torch.save(sut.model.rnnt.state_dict(), args.model_path)
+    # 2. jit
+    if args.save_jit:
+        sut = PytorchSUT(args.model_path, args.calib_dataset_dir, args.batch_size, args.run_mode, args)
+        suffix = f"_{args.run_mode}_jit" if args.save_jit else f"_{args.run_mode}"
+        if args.enable_preprocess:
+            print("==> JIT audio preprocessor...")
+            args.preprocessor_path = os.path.join(os.path.dirname(args.model_path), "preprocessor_jit.pt")
+            torch.jit.save(sut.preprocessor, args.preprocessor_path)
+
+        print("==> JIT model...")
+        args.model_path = os.path.join(os.path.dirname(args.model_path), f"rnnt{suffix}.pt")
+        torch.jit.save(sut.model.rnnt, args.model_path)
+    # 3. benchmark
+    if args.benchmark or args.accuracy:
+        sut = PytorchSUT(args.model_path, args.infer_dataset_dir, args.batch_size, args.run_mode, args)
+        # set cfg
+        settings = lg.TestSettings()
+        settings.scenario = scenario_map[args.scenario]
+        settings.FromConfig(args.mlperf_conf, "rnnt", args.scenario)
+        settings.FromConfig(args.user_conf, "rnnt", args.scenario)
+        settings.mode = lg.TestMode.AccuracyOnly if args.accuracy \
+            else lg.TestMode.PerformanceOnly
+        # set log
+        os.makedirs(args.log_dir, exist_ok=True)
+        log_output_settings = lg.LogOutputSettings()
+        log_output_settings.outdir = args.log_dir
+        log_output_settings.copy_summary_to_stdout = True
+        log_settings = lg.LogSettings()
+        log_settings.log_output = log_output_settings
+        print("==> Running loadgen test")
+        lg.StartTestWithLogSettings(sut.sut, sut.qsl.qsl, settings, log_settings)
+        # eval accuracy
+        if args.accuracy:
+            print(f"==> Evaluating accuracy")
+            log_path = os.path.join(args.log_dir, "mlperf_log_accuracy.json")
+            acc_path = os.path.join(os.getcwd(), "eval_accuracy.py")
+            cmd = f"python {acc_path} --log_path {log_path} --manifest_path {args.manifest_path}"
+            print(f"==> Running accuracy script: {cmd}")
+            subprocess.check_call(cmd, shell=True)
+        print("Done!")
 
 if __name__ == "__main__":
     main()

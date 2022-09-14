@@ -8,7 +8,7 @@ set -x
 : ${MODEL_PATH=${4:-${WORK_DIR}/rnnt_calib.pt}}
 : ${MODE:=quant}
 : ${WAV:=true}
-: ${SAVE_JIT:=false}
+: ${SAVE_JIT:=true}
 : ${DEBUG:=false}
 
 export PYTHONPATH=${PWD}:${PWD}/models/:${PYTHONPATH}
@@ -17,10 +17,11 @@ export RNNT_LOG_LEVEL=${LOG_LEVEL}
 SCRIPT_ARGS=" --batch_size ${BATCH_SIZE}"
 SCRIPT_ARGS+=" --model_path ${MODEL_PATH}"
 SCRIPT_ARGS+=" --run_mode ${MODE}"
+SCRIPT_ARGS+=" --manifest_path ${WORK_DIR}/local_data/wav/dev-clean-wav.json"
 if [[ ${WAV} == true ]]; then
-  SCRIPT_ARGS+=" --dataset_dir ${WORK_DIR}/dev-clean-npy.pt --toml_path configs/rnnt.toml --enable_preprocess"
+  SCRIPT_ARGS+=" --calib_dataset_dir ${WORK_DIR}/dev-clean-npy.pt --toml_path configs/rnnt.toml --enable_preprocess"
 else
-  SCRIPT_ARGS+=" --dataset_dir ${WORK_DIR}/dev-clean-input.pt"
+  SCRIPT_ARGS+=" --calib_dataset_dir ${WORK_DIR}/dev-clean-input.pt"
 fi
 
 [ ${SAVE_JIT} == true ] && SCRIPT_ARGS+=" --save_jit"
@@ -30,7 +31,7 @@ fi
 [ ${DEBUG} == "lldb" ] && EXEC_ARGS="lldb python --"
 [ ${DEBUG} == false ] && EXEC_ARGS="python -u"
 
-${EXEC_ARGS} models/save_rnnt.py ${SCRIPT_ARGS}
+${EXEC_ARGS} models/main.py ${SCRIPT_ARGS}
 
 set +x
 

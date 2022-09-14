@@ -61,7 +61,7 @@ class QuantLSTM(torch.nn.LSTM):
             # cur_cell.input_quantizer = first_cell.input_quantizer
             # cur_cell.output_quantizer = first_cell.input_quantizer
 
-        # pre-layer
+        # per-layer
         for layer in range(self.num_layers):
             if layer != self.num_layers - 1:
                 cur_cell = getattr(self, f"lstm{layer}")

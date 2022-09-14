@@ -43,7 +43,8 @@ public:
       const std::string& preprocessor_file,
       int inter_parallel,
       int intra_parallel,
-      int batch,
+      int batch_size,
+      int split_len,
       bool ht = true,
       bool preprocessor = true,
       std::string test_scenario = "Offline",
@@ -72,8 +73,6 @@ public:
       const std::vector<mlperf::QuerySample>& samples,
       const at::Tensor& results
   );
-
-  static std::string SequenceToString(const std::vector<int64_t>& seq);
 
   mlperf::QuerySampleLibrary* GetQSL() {
     return &qsl_;

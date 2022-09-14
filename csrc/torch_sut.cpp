@@ -31,15 +31,15 @@ RNNTSUT::RNNTSUT(
     const std::string& preprocessor_file,
     int inter_parallel,
     int intra_parallel,
-    int batch, bool ht,
+    int batch_size, int split_len, bool ht,
     bool preprocessor,
     std::string test_scenario,
     bool profiler,
     const std::string& profiler_folder,
     int profiler_iter
-  ) : qsl_(sample_file), model_(model_file), preprocessor_(preprocessor_file),
+  ) : qsl_(sample_file), model_(model_file, split_len), preprocessor_(preprocessor_file),
   nInstances_(inter_parallel), nProcsPerInstance_(intra_parallel),
-  mThreshold_(batch), mHt_(ht), preprocessor_flag_(preprocessor),
+  mThreshold_(batch_size), mHt_(ht), preprocessor_flag_(preprocessor),
   test_scenario_(test_scenario), profiler_flag_(profiler),
   profiler_folder_(profiler_folder), profiler_iter_(profiler_iter) {
 
@@ -131,8 +131,8 @@ void RNNTSUT::thInstance(int index) {
       } else {
         fea_stack = qsl_.AssembleSamples(std::move(indices), preprocessor_flag_);
       }
-      auto results = model_.inference_at(which, fea_stack);
-      QuerySamplesComplete(samples, results);
+      auto res = model_.inference_at(which, fea_stack);
+      QuerySamplesComplete(samples, res);
 
       nIteration += 1;
       if (profiler_iter_ != -1 && nIteration >= profiler_iter_)
@@ -159,7 +159,7 @@ void RNNTSUT::QuerySamplesComplete(
   std::vector<mlperf::QuerySampleResponse> responses(samples.size());
 
   for (size_t i = 0; i < samples.size(); ++i) {
-    std::cout << samples[i].index << "::" << SequenceToString(results[i]) << std::endl;
+    std::cout << samples[i].index << "::" << models::TorchModel::sequence_to_string(results[i]) << std::endl;
     responses[i].id = samples[i].id;
     responses[i].data = reinterpret_cast<uintptr_t>(results[i].data());
     responses[i].size = results[i].size()*sizeof(int64_t);
@@ -178,16 +178,6 @@ void RNNTSUT::QuerySamplesComplete(
     responses[i].size = results[i].nbytes();
   }
   mlperf::QuerySamplesComplete(responses.data(), responses.size());
-}
-
-std::string RNNTSUT::SequenceToString(const std::vector<int64_t>& seq) {
-  std::string str = "";
-  std::vector<char> labels = {' ', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i',
-                              'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's',
-                              't', 'u', 'v', 'w', 'x', 'y', 'z', '\''};
-  for (auto ch : seq)
-    str.push_back(labels[ch]);
-  return str;	
 }
 
 RNNTSUT::~RNNTSUT() {

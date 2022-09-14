@@ -154,10 +154,11 @@ class FilterbankFeatures(nn.Module):
         x = torch.ops.intel_mlperf.preemphasis(x, coeff=self.preemph)
 
         # do stft
-        x = torch.stft(x, n_fft=self.n_fft, hop_length=self.hop_length,
-                       win_length=self.win_length,
-                       center=True, window=self.window.to(dtype=torch.float),
-		       return_complex=True)
+        x = torch.stft(
+            x, n_fft=self.n_fft, hop_length=self.hop_length,
+            win_length=self.win_length,
+            center=True, window=self.window.to(dtype=torch.float),
+		    return_complex=True)
 
         # get power spectrum
         x = x.abs().square()
