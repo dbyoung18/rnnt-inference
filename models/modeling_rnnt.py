@@ -1,84 +1,17 @@
 import torch
 
+from config import RNNTParam
+from torch import Tensor
 from torch.nn import Linear
-# from quant_linear import QuantLinear as Linear
 from quant_lstm import QuantLSTM as LSTM
 from typing import List, Tuple
 from utils import *
 
 
-class RNNTParam:
-    # Transcription
-    trans_input_size = 240  # 80*3
-    trans_hidden_size = 1024
-    pre_num_layers = 2
-    post_num_layers = 3
-    stack_time_factor = 2
-    # Prediction
-    pred_hidden_size = 320
-    pred_num_layers = 2
-    # Joint
-    joint_hidden_size = 512
-    num_labels = 29
-    # [SOS, SPACE, a~z, ', BLANK]
-    # [-1, 0, 1~26, 27, 28]
-    SOS = -1
-    BLANK = 28
-    max_symbols = 30
-    sample_rate = 16000
-
-
-class GreedyDecoder(torch.nn.Module):
-    def __init__(self, model, load_jit=False):
-        super().__init__()
-        self.rnnt = model
-        self.load_jit = load_jit
-
-    def forward(self, x: torch.Tensor, x_lens: torch.Tensor) -> List[List[int]]:
-        f, f_lens = self.rnnt.transcription(x, x_lens)
-        batch_size = f_lens.size(0)
-        res = [[] for i in range(batch_size)]
-        eos_idxs = (f_lens - 1).to(torch.int64)
-        time_idxs = symbols_added = torch.zeros(batch_size, dtype=torch.int64)
-        reach_max_idxs = torch.tensor([False]*batch_size)
-        fi = f[0]
-        pre_g = torch.zeros((1, batch_size), dtype=torch.int64)
-        pre_hg = torch.zeros((RNNTParam.pred_num_layers, batch_size, RNNTParam.pred_hidden_size))
-        pre_cg = torch.zeros((RNNTParam.pred_num_layers, batch_size, RNNTParam.pred_hidden_size))
-
-        while True:
-            g, (hg, cg) = self.rnnt.prediction(pre_g, (pre_hg, pre_cg))
-            y = self.rnnt.joint(fi, g[0])
-            symbols = torch.argmax(y, dim=1)
-            no_blank_idxs = symbols.ne(RNNTParam.BLANK)
-            # update res & g
-            if torch.count_nonzero(no_blank_idxs) != 0:
-                for i in range(batch_size):
-                    if no_blank_idxs[i] == True:
-                        res[i].append(symbols[i].item())
-                symbols_added += no_blank_idxs
-                reach_max_idxs = symbols_added.eq(RNNTParam.max_symbols)
-
-                pre_g[0][no_blank_idxs] = symbols[no_blank_idxs]
-                pre_hg[:, no_blank_idxs, :] = hg[:, no_blank_idxs, :]
-                pre_cg[:, no_blank_idxs, :] = cg[:, no_blank_idxs, :]
-            # update f
-            if torch.count_nonzero(no_blank_idxs) != batch_size or torch.count_nonzero(reach_max_idxs) != 0:
-                time_idxs += (~no_blank_idxs | reach_max_idxs)
-                time_idxs = time_idxs.min(eos_idxs)  # TODO: add early response
-                if torch.equal(time_idxs, eos_idxs):
-                    break
-                fetch_idxs = time_idxs.unsqueeze(1).unsqueeze(0).expand(
-                    1, batch_size, RNNTParam.trans_hidden_size)
-                fi = f.gather(0, fetch_idxs).squeeze(0)
-                symbols_added *= no_blank_idxs
-        return res
-
-
 class RNNT(torch.nn.Module):
     def __init__(self, model_path=None, run_mode=None, load_jit=False):
         super().__init__()
-        self.transcription = Transcription()
+        self.transcription = Transcription(run_mode)
         self.prediction = Prediction()
         self.joint = Joint()
         if model_path is not None:
@@ -123,7 +56,7 @@ class RNNT(torch.nn.Module):
 
 
 class Transcription(torch.nn.Module):
-    def __init__(self, **kwargs):
+    def __init__(self, run_mode, **kwargs):
         super().__init__()
         self.pre_rnn = LSTM(
             RNNTParam.trans_input_size,
@@ -136,14 +69,35 @@ class Transcription(torch.nn.Module):
             RNNTParam.trans_hidden_size,
             RNNTParam.post_num_layers,
         )
+        # self.run_mode = kwargs.pop("run_mode", None)
+        self.run_mode = run_mode
 
     @torch.jit.ignore
-    def forward(self, x: torch.Tensor,
-            x_lens: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        y1, _ = self.pre_rnn(x, None)
-        y2, f_lens = self.stack_time(y1, x_lens)
-        f, _ = self.post_rnn(y2, None)
-        return f, f_lens
+    def forward(self,
+            f: Tensor, f_lens: Tensor,
+            pre_state: Tuple[Tensor, Tensor]=None,
+            post_state: Tuple[Tensor, Tensor]=None) -> Tuple[Tensor, Tensor]:
+        """
+        Args:
+          f: {T, N, IC}
+          f_lens: {N}
+          pre_state: ({D*L, N, C}, {D*L, N, C})
+          post_state: ({D*L, N, C}, {D*L, N, C})
+
+        Returns:
+          f: {T, N, OC}
+          f_lens: {N}
+          pre_state: ({D*L, N, C}, {D*L, N, C})
+          post_state: ({D*L, N, C}, {D*L, N, C})
+        """
+        if self.run_mode == "quant":
+            f = self.pre_quantizer(f)
+        f, pre_state = self.pre_rnn(f, pre_state)
+        f, f_lens = self.stack_time(f, f_lens)
+        if self.run_mode == "quant":
+            f = self.post_quantizer(f)
+        f, post_state = self.post_rnn(f, post_state)
+        return f, f_lens, pre_state, post_state
 
 
 class Prediction(torch.nn.Module):
@@ -158,12 +112,28 @@ class Prediction(torch.nn.Module):
             RNNTParam.pred_hidden_size,
             RNNTParam.pred_num_layers
         )
+        self.sos = RNNTParam.SOS
 
-    def forward(self, x: torch.Tensor,
-            state: Tuple[torch.Tensor, torch.Tensor]) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
-        y = self.embed(x)
-        g, hidden = self.pred_rnn(y, state)
-        return g, hidden
+    def forward(self, x: Tensor,
+            state: Tuple[Tensor, Tensor],
+            batch_size: int=1) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
+        """
+        Args:
+          x: {U, N}
+          state: ({D*L, N, C}, {D*L, N, C})
+
+        Returns:
+          g: {U, N, C}
+          state: ({D*L, N, C}, {D*L, N, C})
+        """
+        # hack SOS, since there is no SOS in embedding table :(
+        # TODO: fuse embedding + maskfill
+        sos_mask = x.eq(self.sos)
+        g = x.masked_fill(sos_mask, 0)
+        g = self.embed(g)
+        g = g.masked_fill_(sos_mask.unsqueeze(2), 0.0)
+        g, state = self.pred_rnn(g, state)
+        return g, state
 
 
 class Joint(torch.nn.Module):
@@ -183,11 +153,19 @@ class Joint(torch.nn.Module):
             RNNTParam.num_labels
         )
 
-    def forward(self, f: torch.Tensor, g: torch.Tensor) -> torch.Tensor:
-        y1 = self.linear1_trans(f)
-        y1 += self.linear1_pred(g)
-        y2 = self.relu(y1)
-        y = self.linear2(y2)
+    def forward(self, f: Tensor, g: Tensor) -> Tensor:
+        """
+        Args:
+          f: {T=1, N, TC}
+          g: {U=1, N, PC}
+
+        Returns:
+          y: {N, T=1, U=1, K}
+        """
+        y = self.linear1_trans(f)
+        y += self.linear1_pred(g)
+        y = self.relu(y)
+        y = self.linear2(y)
         return y
 
 
@@ -195,10 +173,19 @@ class StackTime(torch.nn.Module):
     def __init__(self, stack_time_factor):
         super().__init__()
         self.stack_time_factor = stack_time_factor
+        self.trans_hidden_size = RNNTParam.trans_hidden_size
 
     # TODO: opt reorder f: [T, N, TRANS_OC] => [T/2, N, TRANS_OC*2]
-    def forward(self, x: torch.Tensor,
-            x_lens: torch.Tensor) -> List[torch.Tensor]:
+    def forward(self, x: Tensor, x_lens: Tensor) -> List[Tensor]:
+        """
+        Args:
+          x: {T, N, C}
+          x_lens: {N}
+
+        Returns:
+          x: {T/2, N, C*2}
+          x_lens: {N}
+        """
         r = torch.transpose(x, 0, 1)
         s = r.shape
         zeros = torch.zeros(
@@ -207,7 +194,11 @@ class StackTime(torch.nn.Module):
         s = r.shape
         rs = [s[0], s[1] // self.stack_time_factor, s[2] * self.stack_time_factor]
         r = torch.reshape(r, rs)
-        y = torch.transpose(r, 0, 1)
-        y_lens = torch.ceil(x_lens.float() / self.stack_time_factor).int()
+        y = torch.transpose(r, 0, 1).contiguous()
+        y_lens = torch.ceil(x_lens / self.stack_time_factor).long()
+
+        for batch_idx in range(y.size(1)):
+            if x_lens[batch_idx] % 2 == 1:
+                y[y_lens[batch_idx]-1:, batch_idx, self.trans_hidden_size:] = 0
         return y, y_lens
 

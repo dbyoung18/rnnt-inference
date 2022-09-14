@@ -1,16 +1,18 @@
 #!/bin/bash
 
 set -x 
-export LD_PRELOAD=${CONDA_PREFIX}/lib/libjemalloc.so
-export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:percpu,metadata_thp:always,dirty_decay_ms:9000000000,muzzy_decay_ms:9000000000";
 
 : ${WORK_DIR=${1:-${PWD}/mlperf-rnnt-librispeech}}
 : ${BS=${2:-128}}
+: ${LEN:=-1}
 : ${LOG_LEVEL=${3:-10}}
+: ${INTER:=1}
+: ${INTRA:=112}
 : ${SCENARIO:=Offline}
 : ${DEBUG:=false}
 : ${MODE:=f32}
 : ${WAV:=false}
+: ${ACC:=true}
 : ${LOAD_JIT:=false}
 : ${SAVE_JIT:=false}
 
@@ -18,21 +20,24 @@ export PYTHONPATH=${PWD}:${PWD}/models/:${PYTHONPATH}
 export RNNT_LOG_LEVEL=${LOG_LEVEL}
 
 SCRIPT_ARGS=" --scenario ${SCENARIO}"
-SCRIPT_ARGS+=" --run_mode ${MODE}"
 SCRIPT_ARGS+=" --batch_size ${BS}"
-SCRIPT_ARGS+=" --manifest_path ${WORK_DIR}/local_data/wav/dev-clean-wav.json"
-SCRIPT_ARGS+=" --log_dir ${PWD}/logs/${SCENARIO}"
+SCRIPT_ARGS+=" --split_len ${LEN}"
 SCRIPT_ARGS+=" --mlperf_conf ${PWD}/configs/mlperf.conf"
 SCRIPT_ARGS+=" --user_conf ${PWD}/configs/user.conf"
-SCRIPT_ARGS+=" --accuracy"
+SCRIPT_ARGS+=" --toml_path configs/rnnt.toml"
+SCRIPT_ARGS+=" --manifest_path ${WORK_DIR}/local_data/wav/dev-clean-wav.json"
+SCRIPT_ARGS+=" --calib_dataset_dir ${WORK_DIR}/train-clean-100-npy.pt"
+SCRIPT_ARGS+=" --log_dir ${PWD}/logs/${SCENARIO}"
+SCRIPT_ARGS+=" --run_mode ${MODE}"
+[ ${ACC} == true ] && SCRIPT_ARGS+=" --accuracy"
 # set dataset & preprocessor
 if [[ ${WAV} == true ]]; then
-  SCRIPT_ARGS+=" --dataset_dir ${WORK_DIR}/dev-clean-npy.pt --toml_path configs/rnnt.toml --enable_preprocess"
+  SCRIPT_ARGS+=" --infer_dataset_dir ${WORK_DIR}/dev-clean-npy.pt --enable_preprocess"
   if [[ ${LOAD_JIT} == true ]]; then
     SCRIPT_ARGS+=" --preprocessor_path ${WORK_DIR}/preprocessor_jit.pt"
   fi
 else
-  SCRIPT_ARGS+=" --dataset_dir ${WORK_DIR}/dev-clean-input.pt"
+  SCRIPT_ARGS+=" --infer_dataset_dir ${WORK_DIR}/dev-clean-input.pt"
 fi
 # set model
 if [[ ${LOAD_JIT} == true ]]; then
@@ -49,10 +54,26 @@ else
 fi
 [ ${SAVE_JIT} == true ] && SCRIPT_ARGS+=" --save_jit"
 
-[ ${DEBUG} == "pdb" ] && EXEC_ARGS="ipdb3"
-[ ${DEBUG} == "gdb" ] && EXEC_ARGS="gdb --args python"
-[ ${DEBUG} == "lldb" ] && EXEC_ARGS="lldb python --"
-[ ${DEBUG} == false ] && EXEC_ARGS="python -u"
+echo "export DNNL ENV"
+export DNNL_MAX_CPU_ISA=AVX512_CORE_AMX
+export DNNL_PRIMITIVE_CACHE_CAPACITY=1024
+
+if [[ -n "${INTRA}" ]]; then
+  echo "Use JeMalloc memory allocator"
+  export LD_PRELOAD=${CONDA_PREFIX}/lib/libjemalloc.so
+  export MALLOC_CONF="oversize_threshold:1,background_thread:true,metadata_thp:auto,dirty_decay_ms:9000000000,muzzy_decay_ms:9000000000"
+  echo "Use Intel OpenMP"
+  export OMP_NUM_THREADS=${INTRA}
+  export KMP_AFFINITY=granularity=fine,compact,1,0
+  export KMP_BLOCKTIME=1
+  export LD_PRELOAD=${CONDA_PREFIX}/lib/libiomp5.so:${LD_PRELOAD}
+  EXEC_ARGS="numactl -C 0-$((${INTRA}-1)) -m $((${INTER}-1))"
+fi
+
+[ ${DEBUG} == "pdb" ] && EXEC_ARGS+=" ipdb3"
+[ ${DEBUG} == "gdb" ] && EXEC_ARGS+=" gdb --args python"
+[ ${DEBUG} == "lldb" ] && EXEC_ARGS+=" lldb python --"
+[ ${DEBUG} == false ] && EXEC_ARGS+=" python -u"
 
 ${EXEC_ARGS} models/main.py ${SCRIPT_ARGS}
 

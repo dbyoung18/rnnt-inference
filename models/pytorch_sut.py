@@ -8,12 +8,14 @@ import toml
 import torch
 
 from datasets.preprocessing import AudioPreprocessing
+from decoder import GreedyDecoder
 from rnnt_qsl import RNNTQSL
+from tqdm import tqdm
 from utils import *
 
 
 class PytorchSUT:
-    def __init__(self, model_path, dataset_dir, batch_size=1, args=None, **kwargs):
+    def __init__(self, model_path, dataset_dir, batch_size=1, run_mode=None, args=None, **kwargs):
         # create preprocessor
         if args.enable_preprocess and os.path.exists(args.toml_path):
             if args.load_jit and os.path.exists(args.preprocessor_path):
@@ -24,16 +26,17 @@ class PytorchSUT:
                 self.preprocessor = AudioPreprocessing(**featurizer_config).eval()
         else:
             self.preprocessor = None
-        # create model
-        if args.run_mode == "quant":
-            from modeling_rnnt_quant import RNNT, GreedyDecoder
-        else:
-            from modeling_rnnt import RNNT, GreedyDecoder
-        rnnt = RNNT(model_path, args.run_mode, args.load_jit).eval()
-        self.model = GreedyDecoder(rnnt, args.load_jit)
-        self.enable_preprocess = (self.preprocessor != None)
         self.batch_size = batch_size
-        self.scenario = args.scenario if args.run_mode != "calib" else None
+        # create model
+        if run_mode == "quant":
+            from modeling_rnnt import RNNT
+        else:
+            from modeling_rnnt import RNNT
+        rnnt = RNNT(model_path, run_mode, args.load_jit).eval()
+        self.model = GreedyDecoder(rnnt, args.split_len)
+        self.enable_preprocess = (self.preprocessor != None)
+        self.scenario = args.scenario if run_mode != "calib" else None
+        self.batch_sort = True if self.scenario == "Offline" else False
         # jit preprocessor & model
         if not args.load_jit and args.save_jit:
             if self.enable_preprocess:
@@ -44,9 +47,9 @@ class PytorchSUT:
         self.sut = lg.ConstructSUT(self.issue_queries, self.flush_queries)
 
     def issue_queries(self, samples):
-        if self.scenario == "Offline":
+        if self.batch_sort:
             samples.sort(key=lambda s: self.qsl[s.index][1].item(), reverse=True)
-        for i in range(0, len(samples), self.batch_size):
+        for i in tqdm(range(0, len(samples), self.batch_size)):
             batch_samples = samples[i : min(i+self.batch_size, len(samples))]
             batch_idx = [sample.index for sample in batch_samples]
             results = self.inference(batch_idx)
@@ -82,7 +85,7 @@ class PytorchSUT:
             )
             lg.QuerySamplesComplete([response])
             # batch_responses.append(response)
-            logger.debug(f"{samples[i].index}::{seq_to_sen(results[i])}")
+            print(f"{samples[i].index}::{seq_to_sen(results[i])}")
         # lg.QuerySamplesComplete(batch_responses)
     
     def flush_queries(self):

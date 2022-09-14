@@ -12,7 +12,7 @@ class QuantLinear(torch.nn.Linear):
     def __init__(self, in_features: int, out_features: int, bias: bool=True, **kwargs) -> None:
         super(QuantLinear, self).__init__(in_features, out_features, bias, **kwargs)
 
-    def _init_quantizers(self, run_mode) -> None:
+    def _init_quantizers(self, run_mode=None) -> None:
         # set quant desc
         if run_mode == "calib":
             QUANT_LINEAR_ACTIVA.mode = "calib"
@@ -30,7 +30,6 @@ class QuantLinear(torch.nn.Linear):
     def _quant_parameters(self, run_mode) -> None:
         if run_mode == "fake_quant":
             self.weight_quantizer.amax = torch.max(self.weight.abs())
-            self.weight_quantizer.scale = self.weight_quantizer._max_bound / self.weight_quantizer.amax
             self.weight = Parameter(self.weight_quantizer(self.weight), requires_grad=False)
 
     def forward(self, x: Tensor) -> Tensor:
@@ -49,7 +48,6 @@ class iLinear(QuantLinear):
     def _quant_parameters(self, run_mode) -> None:
         if run_mode == "quant":
             self.weight_quantizer.amax = torch.max(self.weight.abs())
-            self.weight_quantizer.scale = self.weight_quantizer._max_bound / self.weight_quantizer.amax
             self.weight = Parameter(self.weight_quantizer(self.weight), requires_grad=False)      
             b_scale = self.input_quantizer.scale * self.weight_quantizer.scale
             self.bias = Parameter(self.bias * b_scale, requires_grad=False)

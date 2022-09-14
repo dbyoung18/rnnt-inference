@@ -61,6 +61,11 @@ def word_error_rate(hypotheses, references):
         wer = float("inf")
     return wer, scores, words
 
+def save_seqs(seq_list, file_name='seqs.log'):
+    with open(file_name, "w") as file:
+        for i, seq in enumerate(seq_list):
+            file.write(f"{i}::{seq}\n")
+
 def eval_acc(log_path, manifest_path, max_duration=15.0):
     # load ground-truth
     with open(manifest_path) as f:
@@ -77,6 +82,8 @@ def eval_acc(log_path, manifest_path, max_duration=15.0):
     # calculate accuracy
     wer, _, _ = word_error_rate(hypotheses, references)
     print("Word Error Rate: {:}%, accuracy={:}%".format(wer * 100, (1 - wer) * 100))
+    save_seqs(hypotheses, "hypotheses.log")
+    # save_seqs(references, "references.log")
 
 if __name__ == "__main__":
     args = parse_args()
