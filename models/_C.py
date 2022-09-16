@@ -25,3 +25,7 @@ i_layernorm = torch.ops.intel_mlperf.i_layernorm
 i_residual_layernorm = torch.ops.intel_mlperf.i_residual_layernorm
 i_residual_layernorm_ = torch.ops.intel_mlperf.i_residual_layernorm_
 i_residual_layernorm_cin_ = torch.ops.intel_mlperf.i_residual_layernorm_cin_
+tanh = torch.ops.intel_mlperf.tanh
+sigmoid = torch.ops.intel_mlperf.sigmoid
+tanh_f16 = torch.ops.intel_mlperf.tanh_f16
+lstm_postop = torch.ops.intel_mlperf.lstm_postop

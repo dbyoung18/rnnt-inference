@@ -27,7 +27,7 @@ struct Transcription {
     stack_time = *module_ptr++;
     post_rnn = *module_ptr++;
     pre_quantizer = *module_ptr++;
-    post_quantizer = *module_ptr++;
+    // post_quantizer = *module_ptr++;
   }
 
   std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor> forward (
@@ -36,26 +36,26 @@ struct Transcription {
       at::Tensor post_hx, at::Tensor post_cx) {
     // 1. pre_rnn
     f = pre_quantizer({f}).toTensor();
-    std::tie(f, pre_hx, pre_cx) = lstm_forward(pre_rnn, f, pre_hx, pre_cx);
+    std::tie(f, pre_hx, pre_cx) = lstm_forward(pre_rnn, f, pre_hx, pre_cx, false);
     // 2. stack_time
     auto y = stack_time({f, f_lens}).toTensorList();
     f = y[0];
     f_lens = y[1];
     // 3. post_rnn
-    f = post_quantizer({f}).toTensor();
-    std::tie(f, post_hx, post_cx) = lstm_forward(post_rnn, f, post_hx, post_cx); 
+    // f = post_quantizer({f}).toTensor();
+    std::tie(f, post_hx, post_cx) = lstm_forward(post_rnn, f, post_hx, post_cx, true);
     return {f, f_lens, pre_hx, pre_cx, post_hx, post_cx};
   }
 
   std::tuple<at::Tensor, at::Tensor, at::Tensor> lstm_forward (
-      Module lstm, at::Tensor x, at::Tensor hx, at::Tensor cx) {
+      Module lstm, at::Tensor x, at::Tensor hx, at::Tensor cx, bool quant_last_layer) {
     auto cell_ptr = lstm.children().begin();
     at::Tensor hy_layer, cy_layer;
     std::vector<at::Tensor> hy_list, cy_list;
     auto num_layers = hx.sizes()[0];
     for (int64_t layer = 0; layer < num_layers; layer++) {
       std::tie(x, hy_layer, cy_layer) = lstm_layer_forward(
-          *cell_ptr++, x, hx[layer], cx[layer], layer==(num_layers-1));
+          *cell_ptr++, x, hx[layer], cx[layer], layer==(num_layers-1) && quant_last_layer);
       hy_list.emplace_back(hy_layer);
       cy_list.emplace_back(cy_layer);
     }
@@ -65,11 +65,10 @@ struct Transcription {
   }
 
   std::tuple<at::Tensor, at::Tensor, at::Tensor> lstm_layer_forward (
-      Module lstm_cell, at::Tensor x, at::Tensor hx, at::Tensor cx,
-      bool last_layer) {
+      Module lstm_cell, at::Tensor x, at::Tensor hx, at::Tensor cx, bool quant_y) {
     std::vector<at::Tensor> y_list;
     for (int64_t step = 0; step < x.sizes()[0]; step++) {
-      auto outputs = lstm_cell({x[step], hx, cx, last_layer}).toTensorList();
+      auto outputs = lstm_cell({x[step], hx, cx, quant_y}).toTensorList();
       y_list.emplace_back(outputs[0]);
       hx = outputs[1];
       cx = outputs[2];
