@@ -51,6 +51,7 @@ class RNNT(torch.nn.Module):
             if run_mode == "quant":
                 self.transcription.pre_rnn._propagate_quantizers()
                 self.transcription.post_rnn._propagate_quantizers()
+                self.transcription.pre_rnn.lstm1.output_quantizer = self.transcription.post_rnn.lstm0.input_quantizer
                 self.transcription.pre_quantizer = self.transcription.pre_rnn.lstm0.input_quantizer
                 self.transcription.post_quantizer = self.transcription.post_rnn.lstm0.input_quantizer
 
@@ -62,12 +63,14 @@ class Transcription(torch.nn.Module):
             RNNTParam.trans_input_size,
             RNNTParam.trans_hidden_size,
             RNNTParam.pre_num_layers,
+            quant_last_layer=False
         )
         self.stack_time = StackTime(RNNTParam.stack_time_factor)
         self.post_rnn = LSTM(
             RNNTParam.trans_hidden_size*RNNTParam.stack_time_factor,
             RNNTParam.trans_hidden_size,
             RNNTParam.post_num_layers,
+            quant_last_layer=True
         )
         # self.run_mode = kwargs.pop("run_mode", None)
         self.run_mode = run_mode
@@ -94,8 +97,8 @@ class Transcription(torch.nn.Module):
             f = self.pre_quantizer(f)
         f, pre_state = self.pre_rnn(f, pre_state)
         f, f_lens = self.stack_time(f, f_lens)
-        if self.run_mode == "quant":
-            f = self.post_quantizer(f)
+        # if self.run_mode == "quant":
+            # f = self.post_quantizer(f)
         f, post_state = self.post_rnn(f, post_state)
         return f, f_lens, pre_state, post_state
 

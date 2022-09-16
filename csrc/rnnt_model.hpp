@@ -74,11 +74,11 @@ public:
     auto pre_hx = torch::zeros(
         {pre_num_layers, batch_size, trans_hidden_size}, torch::dtype(torch::kInt8));
     auto pre_cx = torch::zeros(
-        {pre_num_layers, batch_size, trans_hidden_size}, torch::dtype(torch::kInt8));
+        {pre_num_layers, batch_size, trans_hidden_size}, torch::dtype(torch::kFloat16));
     auto post_hx = torch::zeros(
         {post_num_layers, batch_size, trans_hidden_size}, torch::dtype(torch::kInt8));
     auto post_cx = torch::zeros(
-        {post_num_layers, batch_size, trans_hidden_size}, torch::dtype(torch::kInt8));
+        {post_num_layers, batch_size, trans_hidden_size}, torch::dtype(torch::kFloat16));
     // init prediction tensors
     auto pred_g = torch::full({1, batch_size}, SOS, torch::dtype(torch::kLong));
     auto pred_hg = torch::zeros({pred_num_layers, batch_size, pred_hidden_size});

@@ -14,7 +14,7 @@ export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:per
 : ${DEBUG:=false}
 : ${WAV:=false}
 : ${HT:=true}
-: ${COUNT:=}
+: ${COUNT:=3}
 
 SUT_DIR=$(pwd)
 EXECUTABLE=${SUT_DIR}/build/rnnt_inference

@@ -10,8 +10,9 @@ from typing import List, Optional, Tuple
 
 
 class QuantLSTM(torch.nn.LSTM):
-    def __init__(self, input_size, hidden_size, num_layers, **kwargs):
+    def __init__(self, input_size, hidden_size, num_layers, quant_last_layer, **kwargs):
         super(QuantLSTM, self).__init__(input_size, hidden_size, num_layers, **kwargs)
+        self.quant_last_layer = quant_last_layer
 
     def _init_cells(self, run_mode=None):
         input_size = self.input_size
@@ -75,7 +76,7 @@ class QuantLSTM(torch.nn.LSTM):
             hx = torch.zeros(self.num_layers, x.size(1), self.hidden_size,
                     dtype=x.dtype)
             cx = torch.zeros(self.num_layers, x.size(1), self.hidden_size,
-                    dtype=torch.float32)
+                    dtype=torch.float16)
         else:
             (hx, cx) = state[:]
 
@@ -94,7 +95,7 @@ class QuantLSTM(torch.nn.LSTM):
         y_list = []
         for step in range(x.size(0)):
             cell_y, hx, cx = getattr(self, f"lstm{layer}")(
-                x[step], hx, cx, layer==(self.num_layers-1))
+                x[step], hx, cx, layer==(self.num_layers-1) and self.quant_last_layer)
             y_list.append(cell_y)
         y = torch.stack(y_list, 0)
         return y, (hx, cx)
@@ -128,7 +129,7 @@ class QuantLSTMCell(nn.LSTMCell):
         self.weight_hh = Parameter(
             self.weight_quantizer(self.weight_hh), requires_grad=False)
 
-    def forward(self, xt: Tensor, ht_1: Tensor, ct_1: Tensor, last_layer: bool=False) -> List[Tensor]:
+    def forward(self, xt: Tensor, ht_1: Tensor, ct_1: Tensor, quant_y: bool=False) -> List[Tensor]:
         if hasattr(self, "input_quantizer"):
             if self.input_quantizer.mode != None:
                 xt, ht_1 = self.input_quantizer(
@@ -162,25 +163,16 @@ class iLSTMCell(QuantLSTMCell):
         self.bias_hh = Parameter(self.bias_hh * b_scale, requires_grad=False)
         self.o_scale = 1 / b_scale
 
-    def forward(self, xt: Tensor, ht_1: Tensor, ct_1: Tensor, last_layer: bool) -> List[Tensor]:
+    def forward(self, xt: Tensor, ht_1: Tensor, ct_1: Tensor, quant_y: bool) -> List[Tensor]:
         gates = P.linear(xt, self.weight_ih, self.bias_ih, self.o_scale.item(), None)
         # TODO: linear_add fusion
         gates += P.linear(ht_1, self.weight_hh, self.bias_hh, self.o_scale.item(), None)
         it, ft, gt, ot = gates.chunk(4, 1)
-        # TODO: approximate + fp16
-        it = torch.sigmoid(it)
-        ft = torch.sigmoid(ft)
-        gt = torch.tanh(gt)
-        ot = torch.sigmoid(ot)
-        ct = (ft * ct_1) + (it * gt)
-        # TODO: requantize before output
-        ht = ot * torch.tanh(ct)
-        # TODO: quant last layer
-        if last_layer:
-            yt = ht.clone()
+        y_p = P.lstm_postop(it, ft, gt, ot, ct_1,
+            self.input_quantizer.scale.item(), self.output_quantizer.scale.item(), quant_y)
+        if quant_y:
+            yt = y_p[0]
         else:
-            yt = self.output_quantizer(ht)
-        quant_ht = self.input_quantizer(ht)
-        # yt = ht
-        return yt, quant_ht, ct
+            yt = y_p[1]
+        return yt, y_p[2], y_p[3]
 
