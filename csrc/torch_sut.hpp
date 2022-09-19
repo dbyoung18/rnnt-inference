@@ -19,6 +19,8 @@
 #include "rnnt_qsl.hpp"
 #include "rnnt_model.hpp"
 #include "rnnt_preprocessor.hpp"
+//#include "SPSCQueue.h"
+#include "concurrentqueue.h"
 #include <torch/csrc/autograd/profiler_legacy.h>
 
 class ProfileRecord {
@@ -94,6 +96,7 @@ private:
 
   Queue_t mQueue_;
   bool mStop_ {false};
+  moodycamel::ConcurrentQueue<std::pair<qsl::Stack, std::vector<mlperf::QuerySample>>> mQueuePreprocessed_;
 
   std::vector<std::thread> mInstances_;
   int nInstances_;
@@ -111,5 +114,7 @@ private:
 
   int rootProc(int index);
   void thInstance(int index);
+  void thInstancePreprocess(int index);
+  void thInstanceModel(int index);
 };
 

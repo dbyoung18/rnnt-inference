@@ -10,7 +10,6 @@
 using namespace torch::indexing;
 
 namespace models {
-using Stack = std::vector<at::IValue>;
 using Module = torch::jit::script::Module;
 
 static const std::vector<char> LABELS = {
@@ -57,15 +56,15 @@ public:
     return model;
   }
 
-  std::vector<at::Tensor> inference (Stack inputs) {
+  std::vector<at::Tensor> inference (qsl::Stack inputs) {
     return forward(model_, inputs);
   }
 
-  std::vector<at::Tensor> inference_at (int socket, Stack inputs) {
+  std::vector<at::Tensor> inference_at (int socket, qsl::Stack inputs) {
     return forward(socket_model_[socket], inputs);
   }
 
-  std::vector<at::Tensor> forward (RNNT model, Stack inputs) {
+  std::vector<at::Tensor> forward (RNNT model, qsl::Stack inputs) {
     auto x = inputs[0].toTensor();
     auto x_lens = inputs[1].toTensor();
     auto batch_size = x_lens.size(0);
