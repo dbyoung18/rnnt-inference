@@ -2,6 +2,7 @@ import logging
 import numpy as np
 import os
 import torch
+from _C import *
 
 
 LOG_LEVEL = int(os.environ['RNNT_LOG_LEVEL']) if 'RNNT_LOG_LEVEL' in os.environ else logging.INFO
