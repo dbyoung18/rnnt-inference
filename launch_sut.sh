@@ -4,7 +4,7 @@ set -x
 export LD_PRELOAD=${CONDA_PREFIX}/lib/libjemalloc.so
 export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:percpu,metadata_thp:always,dirty_decay_ms:30000,muzzy_decay_ms:-1"
 
-: ${BS:=128}
+: ${BS:=32}
 : ${LEN:=-1}
 : ${INTER:=28}
 : ${INTRA:=4}
@@ -14,6 +14,7 @@ export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:per
 : ${DEBUG:=false}
 : ${MODE:=quant}
 : ${WAV:=false}
+: ${PIPELINE:=false}
 : ${HT:=true}
 : ${COUNT:=3}
 : ${VERSION=${1:-"original"}}
@@ -21,7 +22,7 @@ export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:per
 SUT_DIR=$(pwd)
 EXECUTABLE=${SUT_DIR}/build/rnnt_inference
 WORK_DIR=${SUT_DIR}/mlperf-rnnt-librispeech
-OUT_DIR="${SUT_DIR}/logs/${SCENARIO}_${VERSION}_BS${BS}_${INTER}_${INTRA}"
+OUT_DIR="${SUT_DIR}/logs/${SCENARIO}_${VERSION}_${PIPELINE}_BS${BS}_${INTER}_${INTRA}"
 mkdir -p ${OUT_DIR} ${WORK_DIR}
 
 if [[ ${SCENARIO} == "Offline" ]]; then
@@ -53,6 +54,7 @@ fi
 [ ${HT} == false ]  && SCRIPT_ARGS+=" --disable-hyperthreading"
 [ ${PROFILE} == true ] && SCRIPT_ARGS+=" --profiler"
 [ ${ACCURACY} == true ] && SCRIPT_ARGS+=" --accuracy"
+[ ${PIPELINE} == true ] && SCRIPT_ARGS+=" --pipeline"
 if [[ ${ACCURACY} != true && ${COUNT} != "" ]]; then
   SCRIPT_ARGS+=" --profiler_iter ${COUNT}"
 fi
