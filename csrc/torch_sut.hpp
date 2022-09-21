@@ -19,8 +19,7 @@
 #include "rnnt_qsl.hpp"
 #include "rnnt_model.hpp"
 #include "rnnt_preprocessor.hpp"
-//#include "SPSCQueue.h"
-#include "concurrentqueue.h"
+#include "blockingconcurrentqueue.h"
 #include <torch/csrc/autograd/profiler_legacy.h>
 
 class ProfileRecord {
@@ -48,6 +47,7 @@ public:
       int batch_size,
       int split_len,
       bool ht = true,
+      bool pipeline = false,
       bool preprocessor = true,
       std::string test_scenario = "Offline",
       bool profiler = false,
@@ -96,7 +96,7 @@ private:
 
   Queue_t mQueue_;
   bool mStop_ {false};
-  moodycamel::ConcurrentQueue<std::pair<qsl::Stack, std::vector<mlperf::QuerySample>>> mQueuePreprocessed_;
+  moodycamel::BlockingConcurrentQueue<std::pair<qsl::Stack, std::vector<mlperf::QuerySample>>> mQueuePreprocessed_;
 
   std::vector<std::thread> mInstances_;
   int nInstances_;
@@ -105,6 +105,7 @@ private:
   size_t mThreshold_;
   bool mHt_;
   // std::unique_ptr<ProfileRecord> guard_;
+  bool pipeline_flag_;
   bool preprocessor_flag_;
   std::string test_scenario_;
   bool profiler_flag_;

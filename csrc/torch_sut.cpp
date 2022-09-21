@@ -13,6 +13,8 @@
 
 #include "torch_sut.hpp"
 
+static const int preprocess_split = 1;
+static const int preprocess_start_idx = 1;
 ProfileRecord::ProfileRecord(
   bool is_record,
   const std::string& profiler_file
@@ -30,6 +32,7 @@ RNNTSUT::RNNTSUT(
     int inter_parallel,
     int intra_parallel,
     int batch_size, int split_len, bool ht,
+    bool pipeline,
     bool preprocessor,
     std::string test_scenario,
     bool profiler,
@@ -37,7 +40,7 @@ RNNTSUT::RNNTSUT(
     int profiler_iter
   ) : qsl_(sample_file), model_(model_file, split_len), preprocessor_(preprocessor_file), mQueuePreprocessed_(3000),
   nInstances_(inter_parallel), nProcsPerInstance_(intra_parallel),
-  mThreshold_(batch_size), mHt_(ht), preprocessor_flag_(preprocessor),
+  mThreshold_(batch_size), mHt_(ht), pipeline_flag_(pipeline), preprocessor_flag_(preprocessor),
   test_scenario_(test_scenario), profiler_flag_(profiler),
   profiler_folder_(profiler_folder), profiler_iter_(profiler_iter) {
 
@@ -47,11 +50,11 @@ RNNTSUT::RNNTSUT(
     nInstances_ = nMaxProc / nProcsPerInstance_;
 
   // Construct instances
-  if (!preprocessor_flag_) {
+  if (pipeline_flag_ && preprocessor_flag_) {
     std::cout << "Use pipeline mode!" << std::endl;
-    mInstances_.emplace_back(&RNNTSUT::thInstancePreprocess, this, 0);
-    //mInstances_.emplace_back(&RNNTSUT::thInstancePreprocess, this, 1);
-    for (int i = 1; i < nInstances_; ++ i)
+    for (int i = 0; i < preprocess_start_idx; ++ i)
+      mInstances_.emplace_back(&RNNTSUT::thInstancePreprocess, this, i);
+    for (int i = preprocess_start_idx; i < nInstances_; ++ i)
       mInstances_.emplace_back(&RNNTSUT::thInstanceModel, this, i);
   } else {
     for (int i = 0; i < nInstances_; ++ i)
@@ -93,7 +96,6 @@ void RNNTSUT::thInstancePreprocess(int index) {
   Queue_t snippet;
 
   {
-    size_t nIteration = 0;
     while (true) {
       // critical section
       {
@@ -110,16 +112,18 @@ void RNNTSUT::thInstancePreprocess(int index) {
         snippet.clear();
         snippet.splice(snippet.begin(), mQueue_, mQueue_.begin(), it);
         //std::cout << "splice mQueue remain " << mQueue_.size() << " index " << index << std::endl;
+        std::cout << "Preprocessing index " << index << " size " << snippet.size() << std::endl;
         // if (!mQueue_.empty()) Offline never empty
         ctrl_.notify_one();
       }
 
       std::vector<mlperf::QuerySample> samples(snippet.begin(), snippet.end());
-      std::vector<mlperf::QuerySampleIndex> indices (samples.size());
-      std::transform(samples.cbegin(), samples.cend(), indices.begin(),
-          [](mlperf::QuerySample sample) {return sample.index;});
+
       qsl::Stack fea_stack;
-      {
+      if (preprocess_split == 1) {
+      std::vector<mlperf::QuerySampleIndex> indices(samples.size());
+      std::transform(samples.cbegin(), samples.cend(), indices.begin(),
+        [](mlperf::QuerySample sample) {return sample.index;});
         auto wav_stack = qsl_.AssembleSamples(std::move(indices), preprocessor_flag_);
         auto pre_results = preprocessor_.inference_at(which, wav_stack);
         fea_stack = qsl_.GetIValueListFrom(pre_results);
@@ -128,9 +132,29 @@ void RNNTSUT::thInstancePreprocess(int index) {
         // continue;
         // {N, C, T} -> {T, N, C}
         fea_stack = {fea_stack[0].toTensor().permute({2, 0, 1}).contiguous(), fea_stack[1]};
-      }
       mQueuePreprocessed_.enqueue({fea_stack, samples});
-      nIteration += 1;
+      } else {
+      at::Tensor x[preprocess_split];
+      at::Tensor x_lens[preprocess_split];
+      for (auto i = 0; i < preprocess_split; i ++) {
+        std::vector<mlperf::QuerySampleIndex> indices(mThreshold_ / preprocess_split);
+        std::transform(samples.cbegin() + i * indices.capacity(), samples.cbegin() + (i+1) * indices.capacity(), indices.begin(),
+          [](mlperf::QuerySample sample) {return sample.index;});
+        auto wav_stack = qsl_.AssembleSamples(std::move(indices), preprocessor_flag_);
+        auto pre_results = preprocessor_.inference_at(which, wav_stack);
+        fea_stack = qsl_.GetIValueListFrom(pre_results);
+        // Test preprocessor only(response {N, C, T})
+        // QuerySamplesComplete(samples, fea_stack[0].toTensor());
+        // continue;
+        // {N, C, T} -> {T, N, C}
+        x[i] = fea_stack[0].toTensor().permute({2, 0, 1});
+        x_lens[i] = fea_stack[1].toTensor();
+      }
+      auto xs = at::concat(x, 1).contiguous();
+      auto xs_lens = at::concat(x_lens).contiguous();
+      qsl::Stack concat_fea = {xs, xs_lens};
+      mQueuePreprocessed_.enqueue({concat_fea, samples});
+      }
     }
   }
 }
@@ -158,16 +182,14 @@ void RNNTSUT::thInstanceModel(int index) {
   //}
   {
     //auto guard_ = std::make_unique<ProfileRecord>(profiler_flag_, log_name);
-    size_t nIteration = 0;
     std::pair<qsl::Stack, std::vector<mlperf::QuerySample>> front;
     while (true) {
-      while(!mQueuePreprocessed_.try_dequeue(front) && !mStop_);
+      while(!mQueuePreprocessed_.wait_dequeue_timed(front, 5) && !mStop_);
       if (mStop_) break;
-      //std::cout << "start QuerySamplesComplete size " << mQueuePreprocessed_.size_approx() << " index " << index << std::endl;
+      std::cout << "Model inference_at index " << index << " size " << front.first.size() << std::endl;
       auto res = model_.inference_at(which, front.first);
       QuerySamplesComplete(front.second, res);
       //std::cout << "end QuerySamplesComplete size " << mQueuePreprocessed_.size_approx() << " index " << index << std::endl;
-      nIteration += 1;
       //if (profiler_iter_ != -1 && nIteration >= profiler_iter_)
         //guard_->~ProfileRecord();
     }
@@ -247,6 +269,7 @@ void RNNTSUT::thInstance(int index) {
 
 void RNNTSUT::IssueQuery(const std::vector<mlperf::QuerySample>& samples) {
   std::unique_lock<std::mutex> l(mtx_);
+  std::cout << "IssueQuery samples size " << samples.size() << std::endl;
   if (batch_sort_) {
     // Parallel sort samples into a queue
     mQueue_ = qsl_.Sort(samples);
