@@ -7,10 +7,11 @@ from utils import *
 
 
 class GreedyDecoder(torch.nn.Module):
-    def __init__(self, model, split_len=-1):
+    def __init__(self, model, enable_bf16=False, split_len=-1):
         super().__init__()
         self.rnnt = model
         self.split_len = split_len
+        self.enable_bf16 = enable_bf16
 
     def forward(self, x: Tensor, x_lens: Tensor):
         """
@@ -30,9 +31,11 @@ class GreedyDecoder(torch.nn.Module):
         self.post_state = None
         # init prediction tensors
         self.pred_g = torch.tensor([[RNNTParam.SOS]*self.batch_size], dtype=torch.int64)
-        self.pred_state = (
-            torch.zeros((RNNTParam.pred_num_layers, self.batch_size, RNNTParam.pred_hidden_size)),
-            torch.zeros((RNNTParam.pred_num_layers, self.batch_size, RNNTParam.pred_hidden_size)))
+        self.pred_hg = torch.zeros((RNNTParam.pred_num_layers, self.batch_size, RNNTParam.pred_hidden_size))
+        self.pred_cg = torch.zeros((RNNTParam.pred_num_layers, self.batch_size, RNNTParam.pred_hidden_size))
+        if self.enable_bf16:
+            self.pred_hg, self.pred_cg = self.pred_hg.to(torch.bfloat16), self.pred_cg.to(torch.bfloat16)
+        self.pred_state = [self.pred_hg, self.pred_cg]
 
         if self.split_len != -1:
             max_len = x_lens.max().item()
@@ -58,12 +61,14 @@ class GreedyDecoder(torch.nn.Module):
         # 1. do transcription
         f, f_lens, self.pre_state, self.post_state = self.rnnt.transcription(f, f_lens, self.pre_state, self.post_state)
         self.eos_idx = torch.clamp(f_lens-1, min=0)
+        if self.enable_bf16:
+            f = f.to(torch.bfloat16)
         fi = f[0]
 
         while True:
             # TODO: bf16 prediction + joint
             # 2. do prediction
-            g, state = self.rnnt.prediction(self.pred_g, self.pred_state, self.batch_size)
+            g, state = self.rnnt.prediction(self.pred_g, self.pred_state)
             # TODO: fuse joint + argmax
             # 3. do joint
             y = self.rnnt.joint(fi, g[0])
@@ -97,6 +102,7 @@ class GreedyDecoder(torch.nn.Module):
                 fi = f[self.time_idx, self.batch_idx, :]
                 # 5.4. reset symbols_added
                 self.symbols_added *= ~self.update_f
+            # self._dump_tensors()
         return self.res
 
     def _dump_tensors(self, **kwargs):

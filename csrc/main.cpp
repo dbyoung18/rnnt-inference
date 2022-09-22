@@ -47,6 +47,9 @@ int main(int argc, char **argv) {
            {"split_len", "Sequence split len",
             cxxopts::value<int>()->default_value("-1")},
 
+           {"enable_bf16", "Whether enable bf16 for prediction & joint",
+            cxxopts::value<bool>()->default_value("false")},
+
            {"disable-hyperthreading",
             "Whether system enabled hyper-threading or not",
             cxxopts::value<bool>()->default_value("false")},
@@ -84,6 +87,7 @@ int main(int argc, char **argv) {
   auto user_conf = parsed_opts["user_config"].as<std::string>();
   auto batch_size = parsed_opts["batch_size"].as<int>();
   auto split_len = parsed_opts["split_len"].as<int>();
+  auto enable_bf16 = parsed_opts["enable_bf16"].as<bool>();
   auto disable_ht = parsed_opts["disable-hyperthreading"].as<bool>();
   auto pipeline = parsed_opts["pipeline"].as<bool>();
   auto test_scenario = parsed_opts["test_scenario"].as<std::string>();
@@ -100,8 +104,8 @@ int main(int argc, char **argv) {
 
   RNNTSUT sut(
     sample_file, model_file, preprocessor_file,
-    inter_parallel, intra_parallel, batch_size, split_len, !disable_ht,
-    pipeline, preprocessor_flag, test_scenario,
+    inter_parallel, intra_parallel, batch_size, split_len, enable_bf16,
+    !disable_ht, pipeline, preprocessor_flag, test_scenario,
     profiler_flag, profiler_folder, profiler_iter);
   
   testSettings.scenario = scenario_map[test_scenario];

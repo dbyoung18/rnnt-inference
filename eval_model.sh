@@ -11,6 +11,7 @@ set -x
 : ${SCENARIO:=Offline}
 : ${DEBUG:=false}
 : ${MODE:=f32}
+: ${BF16:=true}
 : ${WAV:=false}
 : ${ACC:=true}
 : ${LOAD_JIT:=false}
@@ -30,6 +31,9 @@ SCRIPT_ARGS+=" --calib_dataset_dir ${WORK_DIR}/train-clean-100-npy.pt"
 SCRIPT_ARGS+=" --log_dir ${PWD}/logs/${SCENARIO}"
 SCRIPT_ARGS+=" --run_mode ${MODE}"
 [ ${ACC} == true ] && SCRIPT_ARGS+=" --accuracy"
+if [[ ${MODE} != "f32" && ${MODE} != "calib" && ${BF16} == true ]]; then
+  SCRIPT_ARGS+=" --enable_bf16"
+fi
 # set dataset & preprocessor
 if [[ ${WAV} == true ]]; then
   SCRIPT_ARGS+=" --infer_dataset_dir ${WORK_DIR}/dev-clean-npy.pt --enable_preprocess"

@@ -46,6 +46,7 @@ public:
       int intra_parallel,
       int batch_size,
       int split_len,
+      bool enable_bf16 = true,
       bool ht = true,
       bool pipeline = false,
       bool preprocessor = true,

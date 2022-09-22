@@ -27,6 +27,8 @@ def parse_args():
     parser.add_argument("--run_mode", default=None,
         choices=[None, "f32", "calib", "quant", "fake_quant"],
         help="run_mode, default None(fp32)")
+    parser.add_argument("--enable_bf16", action="store_true",
+        help="enable bf16 for prediction & joint")
     parser.add_argument("--load_jit", action="store_true", help="load jit model")
     parser.add_argument("--save_jit", action="store_true", help="save jit model")
     parser.add_argument("--enable_preprocess", action="store_true",

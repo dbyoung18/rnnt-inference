@@ -1,31 +1,35 @@
 import torch
+import _C as P
 
 from config import RNNTParam
 from torch import Tensor
 from torch.nn import Linear
+from torch.nn.parameter import Parameter
 from quant_lstm import QuantLSTM as LSTM
 from typing import List, Tuple
 from utils import *
 
 
 class RNNT(torch.nn.Module):
-    def __init__(self, model_path=None, run_mode=None, load_jit=False):
+    def __init__(self, model_path=None, run_mode=None, enable_bf16=False, load_jit=False):
         super().__init__()
         self.transcription = Transcription(run_mode)
-        self.prediction = Prediction()
-        self.joint = Joint()
+        self.prediction = Prediction(enable_bf16)
+        self.joint = Joint(enable_bf16)
         if model_path is not None:
-            saved_quantizers = False if run_mode == None or run_mode == "calib" else True
-            self._load_model(model_path, run_mode, load_jit, saved_quantizers)
+            saved_quantizers = False if run_mode == None or run_mode == "f32" or run_mode == "calib" else True
+            self._load_model(model_path, run_mode, enable_bf16, load_jit, saved_quantizers)
 
-    def _load_model(self, model_path, run_mode=None, load_jit=False, saved_quantizers=False):
+    def _load_model(self, model_path, run_mode=None, enable_bf16=False, load_jit=False, saved_quantizers=False):
         if load_jit and os.path.exists(model_path):
             model = torch.jit.load(model_path, map_location="cpu")
-            self.transcription.pre_quantizer = model.transcription.pre_quantizer
+            if saved_quantizers:
+                self.transcription.pre_quantizer = model.transcription.pre_quantizer
             self.transcription.pre_rnn.lstm0 = model.transcription.pre_rnn.lstm0
             self.transcription.pre_rnn.lstm1 = model.transcription.pre_rnn.lstm1
             self.transcription.stack_time = model.transcription.stack_time
-            self.transcription.post_quantizer = model.transcription.post_quantizer
+            if saved_quantizers:
+                self.transcription.post_quantizer = model.transcription.post_quantizer
             self.transcription.post_rnn.lstm0 = model.transcription.post_rnn.lstm0
             self.transcription.post_rnn.lstm1 = model.transcription.post_rnn.lstm1
             self.transcription.post_rnn.lstm2 = model.transcription.post_rnn.lstm2
@@ -54,6 +58,10 @@ class RNNT(torch.nn.Module):
                 self.transcription.pre_rnn.lstm1.output_quantizer = self.transcription.post_rnn.lstm0.input_quantizer
                 self.transcription.pre_quantizer = self.transcription.pre_rnn.lstm0.input_quantizer
                 self.transcription.post_quantizer = self.transcription.post_rnn.lstm0.input_quantizer
+        if load_jit == False:
+            self.prediction.prepack_weights()
+        if load_jit == False and enable_bf16:
+            self.joint.prepack_weights()
 
 
 class Transcription(torch.nn.Module):
@@ -72,7 +80,6 @@ class Transcription(torch.nn.Module):
             RNNTParam.post_num_layers,
             quant_last_layer=True
         )
-        # self.run_mode = kwargs.pop("run_mode", None)
         self.run_mode = run_mode
 
     @torch.jit.ignore
@@ -104,8 +111,9 @@ class Transcription(torch.nn.Module):
 
 
 class Prediction(torch.nn.Module):
-    def __init__(self, **kwargs):
+    def __init__(self, enable_bf16, **kwargs):
         super().__init__()
+        self.sos = RNNTParam.SOS
         self.embed = torch.nn.Embedding(
             RNNTParam.num_labels-1,
             RNNTParam.pred_hidden_size
@@ -115,11 +123,26 @@ class Prediction(torch.nn.Module):
             RNNTParam.pred_hidden_size,
             RNNTParam.pred_num_layers
         )
-        self.sos = RNNTParam.SOS
+        self.enable_bf16 = enable_bf16
+
+    @torch.jit.ignore
+    def prepack_weights(self):
+        self.pred_rnn.weights = []
+        for layer in range(self.pred_rnn.num_layers):
+            w_ih, w_hh, b_ih, b_hh = self.pred_rnn.all_weights[layer][:]
+            if self.enable_bf16:
+                w_ih, w_hh = w_ih.to(torch.bfloat16), w_hh.to(torch.bfloat16)
+            prepacked_w_ih, prepacked_w_hh = P.prepack_lstm_weights(w_ih, w_hh)
+            self.pred_rnn.weights.append([prepacked_w_ih, prepacked_w_hh, b_ih, b_hh])
+        # self.pred_rnn.weights = Parameter(self.pred_rnn.weights)
+        # for layer in range(self.pred_rnn.num_layers):
+            # delattr(self.pred_rnn, self.pred_rnn._all_weights[layer][0])
+            # delattr(self.pred_rnn, self.pred_rnn._all_weights[layer][1])
+            # delattr(self.pred_rnn, self.pred_rnn._all_weights[layer][2])
+            # delattr(self.pred_rnn, self.pred_rnn._all_weights[layer][3])
 
     def forward(self, x: Tensor,
-            state: Tuple[Tensor, Tensor],
-            batch_size: int=1) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
+            state: Tuple[Tensor, Tensor]) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
         """
         Args:
           x: {U, N}
@@ -130,17 +153,19 @@ class Prediction(torch.nn.Module):
           state: ({D*L, N, C}, {D*L, N, C})
         """
         # hack SOS, since there is no SOS in embedding table :(
-        # TODO: fuse embedding + maskfill
+        # TODO: fuse maskfill + embedding + maskfill_ + copy
         sos_mask = x.eq(self.sos)
         g = x.masked_fill(sos_mask, 0)
         g = self.embed(g)
         g = g.masked_fill_(sos_mask.unsqueeze(2), 0.0)
-        g, state = self.pred_rnn(g, state)
-        return g, state
+        if self.enable_bf16:
+            g = g.to(torch.bfloat16)
+        g, hg, cg = P.lstm(g, state[0], state[1], self.pred_rnn.weights, self.pred_rnn.hidden_size)
+        return g, (hg, cg)
 
 
 class Joint(torch.nn.Module):
-    def __init__(self, **kwargs):
+    def __init__(self, enable_bf16, **kwargs):
         super().__init__()
         self.linear1_trans = Linear(
             RNNTParam.trans_hidden_size,
@@ -155,6 +180,32 @@ class Joint(torch.nn.Module):
             RNNTParam.joint_hidden_size,
             RNNTParam.num_labels
         )
+        self.enable_bf16 = enable_bf16
+
+    @torch.jit.ignore
+    def prepack_weights(self):
+        if self.enable_bf16:
+            self.linear1_trans.weight = Parameter(
+                self.linear1_trans.weight.to(torch.bfloat16), requires_grad=False)
+            self.linear1_trans.bias = Parameter(
+                self.linear1_trans.bias.to(torch.bfloat16), requires_grad=False)
+            self.linear1_pred.weight = Parameter(
+                self.linear1_pred.weight.to(torch.bfloat16), requires_grad=False)
+            self.linear1_pred.bias = Parameter(
+                self.linear1_pred.bias.to(torch.bfloat16), requires_grad=False)
+            self.linear2.weight = Parameter(
+                torch.transpose(self.linear2.weight.to(torch.bfloat16), 0, 1), requires_grad=False)
+            self.linear2.bias = Parameter(
+                self.linear2.bias.to(torch.bfloat16), requires_grad=False)
+        self.linear1_trans.weight = Parameter(
+            P.prepack_linear_weight(self.linear1_trans.weight), requires_grad=False)
+        self.linear1_pred.weight = Parameter(
+            P.prepack_linear_weight(self.linear1_pred.weight), requires_grad=False)
+        #  self.linear2.weight = Parameter(
+             #  P.prepack_linear_weight(self.linear2.weight), requires_grad=False)
+        print('--linear1_trans.weight:', self.linear1_trans.weight.shape, self.linear1_trans.weight.dtype)
+        print('--linear1_pred.weight:', self.linear1_pred.weight.shape, self.linear1_pred.weight.dtype)
+        print('--linear2.weight:', self.linear2.weight.shape, self.linear2.weight.dtype)
 
     def forward(self, f: Tensor, g: Tensor) -> Tensor:
         """
@@ -165,10 +216,20 @@ class Joint(torch.nn.Module):
         Returns:
           y: {N, T=1, U=1, K}
         """
-        y = self.linear1_trans(f)
-        y += self.linear1_pred(g)
-        y = self.relu(y)
-        y = self.linear2(y)
+        if self.enable_bf16:
+            y = P.linear(f, self.linear1_trans.weight, self.linear1_trans.bias, None, None)
+            # TODO: fuse linear + add + relu
+            y += P.linear(g, self.linear1_pred.weight, self.linear1_pred.bias, None, None)
+            y = self.relu(y)
+            # TODO: enable 1dnn bf16 for last layer
+            y = torch.matmul(y, self.linear2.weight) + self.linear2.bias
+            # y = P.linear(y, self.linear2.weight, self.linear2.bias, None, None)
+            # y = self.linear2(y.float())
+        else:
+            y = self.linear1_trans(f)
+            y += self.linear1_pred(g)
+            y = self.relu(y)
+            y = self.linear2(y)
         return y
 
 
