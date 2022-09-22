@@ -4,8 +4,9 @@ set -x
 export LD_PRELOAD=${CONDA_PREFIX}/lib/libjemalloc.so
 export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:percpu,metadata_thp:always,dirty_decay_ms:30000,muzzy_decay_ms:-1"
 
-: ${BS:=32}
+: ${BS:=128}
 : ${LEN:=-1}
+: ${BF16:=true}
 : ${INTER:=28}
 : ${INTRA:=4}
 : ${SCENARIO=${2:-"Offline"}}
@@ -44,6 +45,8 @@ SCRIPT_ARGS+=" --inter_parallel=${num_instance}"
 SCRIPT_ARGS+=" --intra_parallel=${core_per_instance}"
 SCRIPT_ARGS+=" --batch_size=${batch_size}"
 SCRIPT_ARGS+=" --split_len=${LEN}"
+
+[ ${BF16} == "true" ] && SCRIPT_ARGS+=" --enable_bf16=true"
 
 if [[ ${WAV} == true ]]; then
   SCRIPT_ARGS+=" --sample_file=${WORK_DIR}/dev-clean-npy.pt --preprocessor_file=${WORK_DIR}/preprocessor_jit.pt --preprocessor"

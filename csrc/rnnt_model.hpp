@@ -40,13 +40,14 @@ class TorchModel {
   using Module = torch::jit::script::Module;
 
 public:
-  TorchModel (const std::string filename, int64_t split_len) {
+  TorchModel (const std::string filename, int64_t split_len, bool enable_bf16) {
     Module model = load(filename);
     model.eval();
     model_ = RNNT(model);
     socket_model_[0] = model_;
     socket_model_[1] = RNNT(model.clone());
     split_len_ = split_len;
+    enable_bf16_ = enable_bf16;
   }
 
   TorchModel ();
@@ -81,8 +82,9 @@ public:
         {post_num_layers, batch_size, trans_hidden_size}, torch::dtype(torch::kFloat16));
     // init prediction tensors
     auto pred_g = torch::full({1, batch_size}, SOS, torch::dtype(torch::kLong));
-    auto pred_hg = torch::zeros({pred_num_layers, batch_size, pred_hidden_size});
-    auto pred_cg = torch::zeros({pred_num_layers, batch_size, pred_hidden_size});
+    auto pred_dtype_ = enable_bf16_ ? at::ScalarType::BFloat16 : torch::kFloat32;
+    auto pred_hg = torch::zeros({pred_num_layers, batch_size, pred_hidden_size}, torch::dtype(pred_dtype_));
+    auto pred_cg = torch::zeros({pred_num_layers, batch_size, pred_hidden_size}, torch::dtype(pred_dtype_));
 
     if (split_len_ != -1) {
       auto max_len = x_lens.max().item().toInt();
@@ -115,6 +117,8 @@ public:
     // 1. do transcription
     std::tie(f, f_lens, pre_hx, pre_cx, post_hx, post_cx) = model.transcription.forward(f, f_lens, pre_hx, pre_cx, post_hx, post_cx);
     auto eos_idx = (f_lens-1).clamp(0);
+    if (enable_bf16_)
+      f = f.to(at::ScalarType::BFloat16);
     auto fi = f[0];
 
     while (true) {
@@ -187,6 +191,7 @@ private:
   RNNT model_;
   RNNT socket_model_[2];
   int64_t split_len_ = -1;
+  bool enable_bf16_ = true;
 };
 
 }
