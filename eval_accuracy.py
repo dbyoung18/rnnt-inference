@@ -77,8 +77,8 @@ def eval_acc(log_path, manifest_path, max_duration=15.0):
         results = json.load(f)
     hypotheses = [None for i in range(len(results))]
     for result in results:
-        seq = array.array("q", bytes.fromhex(result["data"])).tolist()
-        hypotheses[result["qsl_idx"]] = seq_to_sen(seq)
+        seq = torch.Tensor(array.array("q", bytes.fromhex(result["data"])).tolist()).to(torch.int64)
+        hypotheses[result["qsl_idx"]] = seq_to_sen(seq, seq.size(0))
     # calculate accuracy
     wer, _, _ = word_error_rate(hypotheses, references)
     print("Word Error Rate: {:}%, accuracy={:}%".format(wer * 100, (1 - wer) * 100))

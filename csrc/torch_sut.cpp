@@ -132,7 +132,7 @@ void RNNTSUT::thInstance(int index) {
         fea_stack = qsl_.AssembleSamples(std::move(indices), preprocessor_flag_);
       }
       auto res = model_.inference_at(which, fea_stack);
-      QuerySamplesComplete(samples, res);
+      QuerySamplesComplete(samples, res[0], res[1]);
 
       nIteration += 1;
       if (profiler_iter_ != -1 && nIteration >= profiler_iter_)
@@ -176,6 +176,22 @@ void RNNTSUT::QuerySamplesComplete(
     responses[i].id = samples[i].id;
     responses[i].data = reinterpret_cast<uintptr_t>(results[i].data_ptr());
     responses[i].size = results[i].nbytes();
+  }
+  mlperf::QuerySamplesComplete(responses.data(), responses.size());
+}
+
+void RNNTSUT::QuerySamplesComplete(
+    const std::vector<mlperf::QuerySample>& samples,
+    const at::Tensor& results,
+    const at::Tensor& result_lens) {
+  std::vector<mlperf::QuerySampleResponse> responses(samples.size());
+  
+  for (size_t i = 0; i < samples.size(); ++i) {
+    auto result_lens_int = result_lens[i].item().toInt();
+    std::cout << samples[i].index << "::" << models::TorchModel::sequence_to_string(results[i], result_lens_int) << std::endl;
+    responses[i].id = samples[i].id;
+    responses[i].data = reinterpret_cast<uintptr_t>(results[i].data_ptr());
+    responses[i].size = result_lens_int*8;
   }
   mlperf::QuerySamplesComplete(responses.data(), responses.size());
 }

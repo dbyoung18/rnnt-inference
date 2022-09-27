@@ -11,3 +11,4 @@ third_party/
 **/*.log
 **/*.pt
 **/*.swp
+.vscode

@@ -57,19 +57,20 @@ public:
     return model;
   }
 
-  std::vector<std::vector<int64_t>> inference (Stack inputs) {
+  std::vector<at::Tensor> inference (Stack inputs) {
     return forward(model_, inputs);
   }
 
-  std::vector<std::vector<int64_t>> inference_at (int socket, Stack inputs) {
+  std::vector<at::Tensor> inference_at (int socket, Stack inputs) {
     return forward(socket_model_[socket], inputs);
   }
 
-  std::vector<std::vector<int64_t>> forward (RNNT model, Stack inputs) {
+  std::vector<at::Tensor> forward (RNNT model, Stack inputs) {
     auto x = inputs[0].toTensor();
     auto x_lens = inputs[1].toTensor();
     auto batch_size = x_lens.size(0);
-    std::vector<std::vector<int64_t>> res(batch_size);
+    auto res = torch::full({batch_size, x_lens.max().item().toInt()*3}, SOS, torch::dtype(torch::kInt64));
+    auto res_idx = torch::full({batch_size}, -1, torch::dtype(torch::kInt64));
     // init transcription tensors
     auto pre_hx = torch::zeros(
         {pre_num_layers, batch_size, trans_hidden_size}, torch::dtype(torch::kInt8));
@@ -91,12 +92,12 @@ public:
         // 0. split x, x_lens
         auto xi_lens = torch::min(split_lens, (x_lens - split_idx).clamp(0));
         auto xi = x.index({Slice(split_idx, split_idx + split_len_, None)});
-        greedy_decode(model, xi, xi_lens, pre_hx, pre_cx, post_hx, post_cx, pred_g, pred_hg, pred_cg, res);
+        greedy_decode(model, xi, xi_lens, pre_hx, pre_cx, post_hx, post_cx, pred_g, pred_hg, pred_cg, res, res_idx);
       }
     } else {
-      greedy_decode(model, x, x_lens, pre_hx, pre_cx, post_hx, post_cx, pred_g, pred_hg, pred_cg, res);
+      greedy_decode(model, x, x_lens, pre_hx, pre_cx, post_hx, post_cx, pred_g, pred_hg, pred_cg, res, res_idx);
     }
-    return res;
+    return {res, res_idx+1};
   }
 
   void greedy_decode (
@@ -104,14 +105,17 @@ public:
       at::Tensor& pre_hx, at::Tensor& pre_cx,
       at::Tensor& post_hx, at::Tensor& post_cx,
       at::Tensor& pred_g, at::Tensor& pred_hg, at::Tensor& pred_cg,
-      std::vector<std::vector<int64_t>>& res) {
+      at::Tensor& res,
+      at::Tensor& res_idx) {
     // init flags
     auto batch_size = f_lens.size(0);
     auto symbols_added = torch::zeros(batch_size, torch::dtype(torch::kLong));
     auto time_idx = torch::zeros(batch_size, torch::dtype(torch::kLong));
     auto finish = f_lens.eq(0);
+    auto fi_idx = torch::range(0, batch_size-1, torch::dtype(torch::kLong));
     // 1. do transcription
     std::tie(f, f_lens, pre_hx, pre_cx, post_hx, post_cx) = model.transcription.forward(f, f_lens, pre_hx, pre_cx, post_hx, post_cx);
+    auto eos_idx = (f_lens-1).clamp(0);
     auto fi = f[0];
 
     while (true) {
@@ -125,34 +129,29 @@ public:
       auto symbols = torch::argmax(y, 1);
       // 4. if (no BLANK and no MAX_SYMBOLS_PER_STEP) and no FINISH
       auto update_g = symbols.ne(BLANK) & symbols_added.ne(max_symbols_per_step) & ~finish;
-      if (torch::count_nonzero(update_g).item().toInt() != 0) {
+      if (torch::any(update_g).item().toBool()) {
+        res_idx += update_g;
         // 4.1. update res
-        for (int64_t batch_idx = 0; batch_idx < batch_size; ++batch_idx)
-          if (update_g[batch_idx].item().toBool() == true)
-            res[batch_idx].push_back(symbols[batch_idx].item().toInt());
+        res.index_put_({update_g, res_idx.index({update_g})}, symbols.index({update_g}));
         // 4.2. update symbols_added
         symbols_added += update_g;
         // 4.3. update g
         pred_g.index_put_({0, update_g}, symbols.index({update_g}));
-        pred_hg.index_put_({0, update_g, "..."}, hg.index({0, update_g, "..."}));
-        pred_hg.index_put_({1, update_g, "..."}, hg.index({1, update_g, "..."}));
-        pred_cg.index_put_({0, update_g, "..."}, cg.index({0, update_g, "..."}));
-        pred_cg.index_put_({1, update_g, "..."}, cg.index({1, update_g, "..."}));
+        pred_hg.index_put_({Slice(0), update_g, "..."}, hg.index({Slice(0), update_g, "..."}));
+        pred_cg.index_put_({Slice(0), update_g, "..."}, cg.index({Slice(0), update_g, "..."}));
       }
       // 5. if (BLANK or MAX_SYMBOLS_PER_STEP) and no FINISH
       auto update_f = ~update_g & ~finish;
-      if (torch::count_nonzero(update_f).item().toInt() != 0) {
+      if (torch::any(update_f).item().toBool()) {
         // 5.1. update time_idx
         time_idx += update_f;
         // 5.2. BCE
         finish |= time_idx.ge(f_lens);
-        time_idx = time_idx.min(f_lens-1).clamp(0);
-        if (torch::count_nonzero(finish).item().toInt() == batch_size)
+        time_idx = time_idx.min(eos_idx);
+        if (torch::all(finish).item().toBool())
           break;
         // 5.3. update f
-        auto fetch_idx = time_idx.unsqueeze(1).unsqueeze(0).expand(
-            {1, batch_size, trans_hidden_size});
-        fi = f.gather(0, fetch_idx).squeeze(0);
+        fi = f.index({time_idx, fi_idx, "..."});
         // 5.4. reset symbols_added
         symbols_added *= ~update_f;
       }
@@ -163,6 +162,13 @@ public:
     std::string str = "";
     for (auto ch : seq)
       str.push_back(LABELS[ch]);
+    return str;
+  }
+
+  static std::string sequence_to_string(const at::Tensor& seq, const int64_t& seq_lens) {
+    std::string str = "";
+    for(int i=0;i<seq_lens;i++)
+      str.push_back(LABELS[seq[i].item().toInt()]);
     return str;
   }
 
