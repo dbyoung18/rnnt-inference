@@ -52,8 +52,8 @@ class PytorchSUT:
         for i in tqdm(range(0, len(samples), self.batch_size)):
             batch_samples = samples[i : min(i+self.batch_size, len(samples))]
             batch_idx = [sample.index for sample in batch_samples]
-            results = self.inference(batch_idx)
-            self.query_samples_complete(batch_samples, results)
+            results, results_idx = self.inference(batch_idx)
+            self.query_samples_complete(batch_samples, results, results_idx)
 
     def inference(self, batch_idx):
         with torch.no_grad():
@@ -73,7 +73,7 @@ class PytorchSUT:
             results = self.model(feas, fea_lens)
         return results
 
-    def query_samples_complete(self, samples, results):
+    def query_samples_complete(self, samples, results, results_idx):
         batch_responses = []
         for i in range(len(results)):
             res_arr = array.array("q", results[i])
@@ -81,11 +81,11 @@ class PytorchSUT:
             response = lg.QuerySampleResponse(
                 samples[i].id,
                 buf_inf[0],
-                buf_inf[1]*res_arr.itemsize
+                results_idx[i]*res_arr.itemsize
             )
             lg.QuerySamplesComplete([response])
             # batch_responses.append(response)
-            print(f"{samples[i].index}::{seq_to_sen(results[i])}")
+            print(f"{samples[i].index}::{seq_to_sen(results[i], results_idx[i])}")
         # lg.QuerySamplesComplete(batch_responses)
     
     def flush_queries(self):

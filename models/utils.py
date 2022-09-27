@@ -2,7 +2,7 @@ import logging
 import numpy as np
 import os
 import torch
-from _C import *
+# from _C import *
 
 
 LOG_LEVEL = int(os.environ['RNNT_LOG_LEVEL']) if 'RNNT_LOG_LEVEL' in os.environ else logging.INFO
@@ -17,8 +17,8 @@ labels = [" ", "a", "b", "c", "d", "e", "f", "g", "h", "i", \
           "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", \
           "t", "u", "v", "w", "x", "y", "z", "'"]
 
-def seq_to_sen(seq):
-    sen = "".join([labels[idx] for idx in seq])
+def seq_to_sen(seq, seq_lens):
+    sen = "".join([labels[seq[idx]] for idx in range(seq_lens)])
     return sen
 
 def migrate_state_dict(model, split_fc1=True):

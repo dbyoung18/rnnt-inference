@@ -161,12 +161,12 @@ class iLSTMCell(QuantLSTMCell):
         b_scale = self.input_quantizer.scale * self.weight_quantizer.scale
         self.bias_ih = Parameter(self.bias_ih * b_scale, requires_grad=False)
         self.bias_hh = Parameter(self.bias_hh * b_scale, requires_grad=False)
-        self.o_scale = 1 / b_scale
+        self.o_scale_item = (1 / b_scale).item()
 
     def forward(self, xt: Tensor, ht_1: Tensor, ct_1: Tensor, quant_y: bool) -> List[Tensor]:
-        gates = P.linear(xt, self.weight_ih, self.bias_ih, self.o_scale.item(), None)
+        gates = P.linear(xt, self.weight_ih, self.bias_ih, self.o_scale_item , None)
         # TODO: linear_add fusion
-        gates += P.linear(ht_1, self.weight_hh, self.bias_hh, self.o_scale.item(), None)
+        gates += P.linear(ht_1, self.weight_hh, self.bias_hh, self.o_scale_item , None)
         it, ft, gt, ot = gates.chunk(4, 1)
         y_p = P.lstm_postop(it, ft, gt, ot, ct_1,
             self.input_quantizer.scale.item(), self.output_quantizer.scale.item(), quant_y)
