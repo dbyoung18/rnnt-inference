@@ -136,8 +136,9 @@ class FilterbankFeatures(nn.Module):
         self.max_length = max_length + max_pad
 
     def get_seq_len(self, seq_len):
-        seq_len = (seq_len + self.hop_length - 1) // self.hop_length
-        seq_len = (seq_len + self.frame_splicing - 1) // self.frame_splicing
+        seq_len = torch.ceil(seq_len.float() / self.hop_length).to(dtype=torch.long)
+        if self.frame_splicing > 1:
+            seq_len = torch.ceil(seq_len.float() / self.frame_splicing).to(dtype=torch.long)
         return seq_len
 
     @torch.no_grad()
