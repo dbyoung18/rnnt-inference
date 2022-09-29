@@ -2,7 +2,7 @@
 
 set -x
 export LD_PRELOAD=${CONDA_PREFIX}/lib/libjemalloc.so
-export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:percpu,metadata_thp:always,dirty_decay_ms:9000000000,muzzy_decay_ms:9000000000";
+export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:percpu,metadata_thp:always,dirty_decay_ms:30000,muzzy_decay_ms:-1"
 
 : ${BS:=128}
 : ${LEN:=-1}
