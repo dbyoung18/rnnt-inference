@@ -4,7 +4,7 @@ set -x
 export LD_PRELOAD=${CONDA_PREFIX}/lib/libjemalloc.so
 export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:percpu,metadata_thp:always,dirty_decay_ms:9000000000,muzzy_decay_ms:9000000000";
 
-: ${BS=${1:-128}}
+: ${BS:=128}
 : ${LEN:=-1}
 : ${INTER:=28}
 : ${INTRA:=4}
@@ -12,14 +12,16 @@ export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:per
 : ${ACCURACY:=false}
 : ${PROFILE:=false}
 : ${DEBUG:=false}
+: ${MODE:=quant}
 : ${WAV:=false}
 : ${HT:=true}
 : ${COUNT:=3}
+: ${VERSION=${1:-"original"}}
 
 SUT_DIR=$(pwd)
 EXECUTABLE=${SUT_DIR}/build/rnnt_inference
 WORK_DIR=${SUT_DIR}/mlperf-rnnt-librispeech
-OUT_DIR="${PWD}/logs/${SCENARIO}"
+OUT_DIR="${SUT_DIR}/logs/${SCENARIO}_${VERSION}_BS${BS}_${INTER}_${INTRA}"
 mkdir -p ${OUT_DIR} ${WORK_DIR}
 
 if [[ ${SCENARIO} == "Offline" ]]; then
@@ -33,7 +35,7 @@ elif [[ ${SCENARIO} == "Server" ]]; then
 fi
 
 SCRIPT_ARGS=" --test_scenario=${SCENARIO}"
-SCRIPT_ARGS+=" --model_file=${WORK_DIR}/rnnt_quant_jit.pt"
+SCRIPT_ARGS+=" --model_file=${WORK_DIR}/rnnt_${MODE}_jit.pt"
 SCRIPT_ARGS+=" --mlperf_config=${SUT_DIR}/inference/mlperf.conf"
 SCRIPT_ARGS+=" --user_config=${SUT_DIR}/configs/user.conf"
 SCRIPT_ARGS+=" --output_dir=${OUT_DIR}"
@@ -55,8 +57,10 @@ if [[ ${ACCURACY} != true && ${COUNT} != "" ]]; then
   SCRIPT_ARGS+=" --profiler_iter ${COUNT}"
 fi
 
+[ ${DEBUG} != false ]  && EXECUTABLE=${SUT_DIR}/build_dbg/rnnt_inference
 [ ${DEBUG} == "gdb" ] && EXEC_ARGS="gdb --args"
 [ ${DEBUG} == "lldb" ] && EXEC_ARGS="lldb --"
+[ ${DEBUG} == "memcheck" ] && EXEC_ARGS="valgrind --leak-check=yes --gen-suppressions=all"
 
 ${EXEC_ARGS} ${EXECUTABLE} ${SCRIPT_ARGS}
 
