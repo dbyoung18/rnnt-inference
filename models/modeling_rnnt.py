@@ -197,7 +197,9 @@ class StackTime(torch.nn.Module):
         s = r.shape
         rs = [s[0], s[1] // self.stack_time_factor, s[2] * self.stack_time_factor]
         r = torch.reshape(r, rs)
-        y = torch.transpose(r, 0, 1).contiguous()
+        # y = torch.transpose(r, 0, 1).contiguous()
+        y = torch.transpose(r, 0, 1)
+        y = torch.reshape(y, y.shape)
         y_lens = torch.ceil(x_lens / self.stack_time_factor).long()
 
         for batch_idx in range(y.size(1)):
