@@ -188,7 +188,7 @@ void RNNTSUT::thInstanceModel(int index) {
       if (mStop_) break;
       std::cout << "Model inference_at index " << index << " size " << front.first.size() << std::endl;
       auto res = model_.inference_at(which, front.first);
-      QuerySamplesComplete(front.second, res);
+      QuerySamplesComplete(front.second, res[0], res[1]);
       //std::cout << "end QuerySamplesComplete size " << mQueuePreprocessed_.size_approx() << " index " << index << std::endl;
       //if (profiler_iter_ != -1 && nIteration >= profiler_iter_)
         //guard_->~ProfileRecord();
@@ -286,7 +286,7 @@ void RNNTSUT::QuerySamplesComplete(
   std::vector<mlperf::QuerySampleResponse> responses(samples.size());
 
   for (size_t i = 0; i < samples.size(); ++i) {
-    std::cout << samples[i].index << "::" << models::TorchModel::sequence_to_string(results[i]) << std::endl;
+    //std::cout << samples[i].index << "::" << models::TorchModel::sequence_to_string(results[i]) << std::endl;
     responses[i].id = samples[i].id;
     responses[i].data = reinterpret_cast<uintptr_t>(results[i].data());
     responses[i].size = results[i].size()*sizeof(int64_t);
@@ -315,7 +315,7 @@ void RNNTSUT::QuerySamplesComplete(
   
   for (size_t i = 0; i < samples.size(); ++i) {
     auto result_lens_int = result_lens[i].item().toInt();
-    std::cout << samples[i].index << "::" << models::TorchModel::sequence_to_string(results[i], result_lens_int) << std::endl;
+    //std::cout << samples[i].index << "::" << models::TorchModel::sequence_to_string(results[i], result_lens_int) << std::endl;
     responses[i].id = samples[i].id;
     responses[i].data = reinterpret_cast<uintptr_t>(results[i].data_ptr());
     responses[i].size = result_lens_int*8;
