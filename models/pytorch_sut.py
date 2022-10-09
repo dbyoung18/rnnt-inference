@@ -7,6 +7,7 @@ import mlperf_loadgen as lg
 import toml
 import torch
 
+import _C as P
 from datasets.preprocessing import AudioPreprocessing
 from decoder import GreedyDecoder
 from rnnt_qsl import RNNTQSL

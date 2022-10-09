@@ -2,6 +2,7 @@
 **/logs/*
 **/cscope.*/*
 build/
+build_dbg/
 inference/
 llvm-project/
 mlperf-rnnt-librispeech
@@ -12,3 +13,4 @@ third_party/
 **/*.pt
 **/*.swp
 .vscode
+.gdb_history

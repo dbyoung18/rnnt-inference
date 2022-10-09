@@ -73,6 +73,7 @@ fi
 [ ${DEBUG} == "pdb" ] && EXEC_ARGS+=" ipdb3"
 [ ${DEBUG} == "gdb" ] && EXEC_ARGS+=" gdb --args python"
 [ ${DEBUG} == "lldb" ] && EXEC_ARGS+=" lldb python --"
+[ ${DEBUG} == true ] && EXEC_ARGS+=" python -u"
 [ ${DEBUG} == false ] && EXEC_ARGS+=" python -u"
 
 ${EXEC_ARGS} models/main.py ${SCRIPT_ARGS}
