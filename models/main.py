@@ -22,9 +22,9 @@ def main():
         sut = PytorchSUT(args.model_path, args.calib_dataset_dir, args.batch_size, "calib", args)
         print("==> Running calibration...")
         for i in tqdm(range(0, sut.qsl.count, args.batch_size)):
-            results = sut.inference(range(i, min(i+args.batch_size, sut.qsl.count)))
+            results, results_idx = sut.inference(range(i, min(i+args.batch_size, sut.qsl.count)))
             for j in range(len(results)):
-                logger.debug(f"{i+j}::{seq_to_sen(results[j])}")
+                logger.debug(f"{i+j}::{seq_to_sen(results[j], results_idx[j])}")
         args.model_path = os.path.join(os.path.dirname(args.model_path), "rnnt_calib.pt")
         torch.save(sut.model.rnnt.state_dict(), args.model_path)
     # 2. jit
