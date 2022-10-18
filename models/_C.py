@@ -11,6 +11,8 @@ elif sys.platform == 'linux':
 
 linear = torch.ops.intel_mlperf.linear
 linear_gelu = torch.ops.intel_mlperf.linear_gelu
+amx_linear = torch.ops.intel_mlperf.amx_linear
+amx_linear_i8o32 = torch.ops.intel_mlperf.amx_linear_i8o32
 baddbmm_out_ = torch.ops.intel_mlperf.baddbmm_out_
 prepack_linear_weight = torch.ops.intel_mlperf.prepack_linear_weight
 matmul_out_ = torch.ops.intel_mlperf.matmul_out_
@@ -37,5 +39,4 @@ tanh = torch.ops.intel_mlperf.tanh
 sigmoid = torch.ops.intel_mlperf.sigmoid
 tanh_f16 = torch.ops.intel_mlperf.tanh_f16
 lstm_postop = torch.ops.intel_mlperf.lstm_postop
-lstm_int8 = torch.ops.intel_mlperf.lstm_int8
-# lstm_rnnt_cell = torch.ops.intel_mlperf.lstm_rnnt_cell
+lstm_layer_int8 = torch.ops.intel_mlperf.lstm_layer_int8

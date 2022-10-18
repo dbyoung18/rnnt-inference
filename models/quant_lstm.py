@@ -89,7 +89,7 @@ class QuantLSTM(torch.nn.LSTM):
             (hx, cx) = state[:]
 
         for layer in range(self.num_layers):
-            x, (hx[layer], cx[layer]) = getattr(self, f"lstm{layer}")(x, hx[layer], cx[layer], layer==(self.num_layers-1) and self.skip_quant_y)
+            x, hx[layer], cx[layer] = getattr(self, f"lstm{layer}")(x, hx[layer], cx[layer], layer==(self.num_layers-1) and self.skip_quant_y)
         return (x, (hx, cx))
 
 class QuantLSTMLayer(nn.LSTMCell):
@@ -143,20 +143,21 @@ class QuantLSTMLayer(nn.LSTMCell):
             ht_1 = ot * torch.tanh(ct_1)
             yt_list.append(ht_1)
         yt = torch.stack(yt_list, 0)
-        return yt, (ht_1, ct_1)
+        return yt, ht_1, ct_1
 
 
 class iLSTMLayer(QuantLSTMLayer):
-    def __init__(self, input_size: int, hidden_size: int, **kwargs) -> None:
+    def __init__(self, input_size: int, hidden_size: int, first_layer = False, **kwargs) -> None:
         super(iLSTMLayer, self).__init__(input_size, hidden_size, **kwargs)
+        self.first_layer = first_layer
 
     def _quant_parameters(self, weights, o_scale_list) -> None:
         self.weight_quantizer.amax = torch.max(
             torch.cat([self.weight_ih, self.weight_hh], 1).abs())
         self.weight_ih = Parameter(
-            self.weight_quantizer._quant_forward(self.weight_ih), requires_grad=False)
+            self.weight_quantizer._quant_forward(self.weight_ih, self.first_layer), requires_grad=False)
         self.weight_hh = Parameter(
-            self.weight_quantizer._quant_forward(self.weight_hh), requires_grad=False)
+            self.weight_quantizer._quant_forward(self.weight_hh, self.first_layer), requires_grad=False)
         b_scale = self.input_quantizer.scale * self.weight_quantizer.scale
         self.bias_ih = Parameter(self.bias_ih * b_scale, requires_grad=False)
         self.bias_hh = Parameter(self.bias_hh * b_scale, requires_grad=False)
@@ -168,6 +169,8 @@ class iLSTMLayer(QuantLSTMLayer):
         o_scale_list.append(self.o_scale)
 
     def forward(self, x: Tensor, ht_1: Tensor, ct_1: Tensor, skip_quant_y: bool) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
+        if not self.first_layer:
+            return P.lstm_layer_int8(x, ht_1, ct_1, self.weight_ih, self.weight_hh, self.bias_ih, self.bias_hh, self.o_scale, self.in_quant_scale, self.output_quantizer.scale.item(), skip_quant_y)
         gates_list = []
         for i in range(x.shape[0]):
             gates = P.linear(x[i].squeeze(0), self.weight_ih, self.bias_ih, self.o_scale, None)
@@ -189,4 +192,4 @@ class iLSTMLayer(QuantLSTMLayer):
                 yt_list.append(y_p[1])
 
         x = torch.stack(yt_list, 0)
-        return (x, (ht_1, ct_1))
+        return x, ht_1, ct_1

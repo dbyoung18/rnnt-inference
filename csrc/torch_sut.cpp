@@ -260,8 +260,11 @@ void RNNTSUT::thInstance(int index) {
       QuerySamplesComplete(samples, res[0], res[1]);
 
       nIteration += 1;
-      if (profiler_iter_ != -1 && nIteration >= profiler_iter_)
+      //printf("nIteration %d\n", nIteration);
+      if (profiler_flag_ && profiler_iter_ != -1 && nIteration >= profiler_iter_) {
         guard_->~ProfileRecord();
+        break;
+      }
     }
   }
 }
@@ -271,7 +274,9 @@ void RNNTSUT::IssueQuery(const std::vector<mlperf::QuerySample>& samples) {
   std::cout << "IssueQuery samples size " << samples.size() << std::endl;
   if (batch_sort_) {
     // Parallel sort samples into a queue
-    mQueue_ = qsl_.Sort(samples);
+    //mQueue_ = qsl_.Sort(samples);
+    for (auto sample : samples)
+      mQueue_.emplace_back(sample);
   } else {
     for (auto sample : samples)
       mQueue_.emplace_back(sample);

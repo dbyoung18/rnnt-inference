@@ -49,6 +49,7 @@ class RNNT(torch.nn.Module):
                 self.transcription.post_rnn._init_layers(run_mode)
                 # self.joint.linear1_trans._init_quantizers(run_mode)
 
+            self.transcription.pre_rnn.lstm0.first_layer = True
             self.transcription.pre_rnn._process_parameters(run_mode)
             self.transcription.post_rnn._process_parameters(run_mode)
             # self.joint.linear1_trans._quant_parameters(run_mode)
