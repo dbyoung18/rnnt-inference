@@ -20,6 +20,7 @@ import torch.nn as nn
 import math
 import librosa
 from .segment import AudioSegment
+from utils import *
 
 
 class WaveformFeaturizer(object):

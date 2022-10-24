@@ -33,6 +33,7 @@ fi
 if [[ ${STAGE} -le 2 ]]; then
   echo '==> Pre-processing dataset'
   export PATH="${PWD}/third_party/bin/:${PATH}"
+  export PYTHONPATH="${PWD}/models:${PYTHONPATH}"
   python datasets/convert_librispeech.py \
     --input_dir=${LOCAL_DATA_DIR}/raw/LibriSpeech/dev-clean \
     --output_dir=${LOCAL_DATA_DIR}
