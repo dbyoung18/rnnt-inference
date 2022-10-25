@@ -5,11 +5,7 @@ set -x
 CONDA_ENV=${1:-'rnnt-infer'}
 HOME_DIR=${2:-${PWD}}
 
-echo '==> Creating conda env'
-# conda env create -n ${CONDA_ENV} -f environment.yml --force -v
-conda env create -n ${CONDA_ENV}
 source activate ${CONDA_ENV}
-
 pushd ${HOME_DIR}
 
 # use gcc-9 compile clang-15
@@ -42,13 +38,13 @@ third_party_dir=${HOME_DIR}/third_party
 mkdir -p ${third_party_dir}
 pushd ${third_party_dir}
 
-wget https://ftp.osuosl.org/pub/xiph/releases/flac/flac-1.3.2.tar.xz -O flac-1.3.2.tar.xz
+wget --no-check-certificate https://ftp.osuosl.org/pub/xiph/releases/flac/flac-1.3.2.tar.xz -O flac-1.3.2.tar.xz
 tar xf flac-1.3.2.tar.xz
 pushd flac-1.3.2
 ./configure --prefix=${third_party_dir} && make && make install
 popd
 
-wget https://sourceforge.net/projects/sox/files/sox/14.4.2/sox-14.4.2.tar.gz -O sox-14.4.2.tar.gz
+wget --no-check-certificate https://sourceforge.net/projects/sox/files/sox/14.4.2/sox-14.4.2.tar.gz -O sox-14.4.2.tar.gz
 tar zxf sox-14.4.2.tar.gz
 pushd sox-14.4.2
 LDFLAGS="-L${third_party_dir}/lib" CFLAGS="-I${third_party_dir}/include" ./configure --prefix=${third_party_dir} --with-flac && make && make install
