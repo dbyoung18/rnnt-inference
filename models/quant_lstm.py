@@ -80,7 +80,8 @@ class QuantLSTM(torch.nn.LSTM):
         else:
             (hx, cx) = state[:]
 
-        x = x.contiguous()
+        x = list(torch.split(x,1))
+        # x = x.contiguous()
         hy_list, cy_list = [], []
         for layer in range(self.num_layers):
             x, (hy_layer, cy_layer) = self.lstm_layer(x, hx[layer], cx[layer], layer)
@@ -88,17 +89,17 @@ class QuantLSTM(torch.nn.LSTM):
             cy_list.append(cy_layer)
         hy = torch.stack(hy_list, 0)
         cy = torch.stack(cy_list, 0)
+        x = torch.stack(x,0)
         return x, (hy, cy)
 
     @torch.jit.ignore
-    def lstm_layer(self, x: Tensor, hx: Tensor, cx: Tensor, layer: int) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
+    def lstm_layer(self, x: List[Tensor], hx: Tensor, cx: Tensor, layer: int) -> Tuple[List[Tensor], Tuple[Tensor, Tensor]]:
         y_list = []
-        for step in range(x.size(0)):
-            cell_y, hx, cx = getattr(self, f"lstm{layer}")(
-                x[step], hx, cx, layer==(self.num_layers-1) and self.quant_last_layer)
-            y_list.append(cell_y)
-        y = torch.stack(y_list, 0)
-        return y, (hx, cx)
+        (cell_y, (hx, cx)) = getattr(self, f"lstm{layer}")(
+            x, hx, cx, layer==(self.num_layers-1) and self.quant_last_layer)
+        for step in range(len(x)):
+            y_list.append(cell_y[step])
+        return y_list, (hx, cx)
 
 
 class QuantLSTMCell(nn.LSTMCell):
@@ -147,6 +148,35 @@ class QuantLSTMCell(nn.LSTMCell):
         return ht, ht, ct
 
 
+# class iLSTMCell(QuantLSTMCell):
+#     def __init__(self, input_size: int, hidden_size: int, **kwargs) -> None:
+#         super(iLSTMCell, self).__init__(input_size, hidden_size, **kwargs)
+
+#     def _quant_parameters(self) -> None:
+#         self.weight_quantizer.amax = torch.max(
+#             torch.cat([self.weight_ih, self.weight_hh], 1).abs())
+#         self.weight_ih = Parameter(
+#             self.weight_quantizer._quant_forward(self.weight_ih), requires_grad=False)
+#         self.weight_hh = Parameter(
+#             self.weight_quantizer._quant_forward(self.weight_hh), requires_grad=False)
+#         b_scale = self.input_quantizer.scale * self.weight_quantizer.scale
+#         self.bias_ih = Parameter(self.bias_ih * b_scale, requires_grad=False)
+#         self.bias_hh = Parameter(self.bias_hh * b_scale, requires_grad=False)
+#         self.o_scale_item = (1 / b_scale).item()
+
+#     def forward(self, xt: Tensor, ht_1: Tensor, ct_1: Tensor, quant_y: bool) -> List[Tensor]:
+#         gates = P.linear(xt, self.weight_ih, self.bias_ih, self.o_scale_item , None)
+#         # TODO: linear_add fusion
+#         gates += P.linear(ht_1, self.weight_hh, self.bias_hh, self.o_scale_item , None)
+#         it, ft, gt, ot = gates.chunk(4, 1)
+#         y_p = P.lstm_postop(it, ft, gt, ot, ct_1,
+#             self.input_quantizer.scale.item(), self.output_quantizer.scale.item(), quant_y)
+#         if quant_y:
+#             yt = y_p[0]
+#         else:
+#             yt = y_p[1]
+#         return yt, y_p[2], y_p[3]
+
 class iLSTMCell(QuantLSTMCell):
     def __init__(self, input_size: int, hidden_size: int, **kwargs) -> None:
         super(iLSTMCell, self).__init__(input_size, hidden_size, **kwargs)
@@ -161,18 +191,29 @@ class iLSTMCell(QuantLSTMCell):
         b_scale = self.input_quantizer.scale * self.weight_quantizer.scale
         self.bias_ih = Parameter(self.bias_ih * b_scale, requires_grad=False)
         self.bias_hh = Parameter(self.bias_hh * b_scale, requires_grad=False)
-        self.o_scale_item = (1 / b_scale).item()
+        self.o_scale = 1 / b_scale.item()
+        self.in_quant_scale = self.input_quantizer.scale.item()
+        # self.out_quant_scale = self.output_quantizer.scale.item()
 
-    def forward(self, xt: Tensor, ht_1: Tensor, ct_1: Tensor, quant_y: bool) -> List[Tensor]:
-        gates = P.linear(xt, self.weight_ih, self.bias_ih, self.o_scale_item , None)
-        # TODO: linear_add fusion
-        gates += P.linear(ht_1, self.weight_hh, self.bias_hh, self.o_scale_item , None)
-        it, ft, gt, ot = gates.chunk(4, 1)
-        y_p = P.lstm_postop(it, ft, gt, ot, ct_1,
-            self.input_quantizer.scale.item(), self.output_quantizer.scale.item(), quant_y)
-        if quant_y:
-            yt = y_p[0]
-        else:
-            yt = y_p[1]
-        return yt, y_p[2], y_p[3]
+    def forward(self, x: List[Tensor], ht_1: Tensor, ct_1: Tensor, quant_y: bool) -> Tuple[List[Tensor], Tuple[Tensor, Tensor]]:
+        gates_list = []
+        for i in range(len(x)):
+            gates = P.linear(x[i].squeeze(0), self.weight_ih, self.bias_ih, self.o_scale, None)
+            gates_list.append(gates)
 
+        yt_list : List[Tensor] = []
+        for i in range(len(x)):
+            gates_list[i] += P.linear(ht_1, self.weight_hh, self.bias_hh, self.o_scale, None)
+
+            it, ft, gt, ot = gates_list[i].chunk(4, 1)
+            y_p = P.lstm_postop(it, ft, gt, ot, ct_1,
+                self.in_quant_scale, self.output_quantizer.scale.item(), quant_y)
+            
+            ht_1 = y_p[2]
+            ct_1 = y_p[3]
+            if quant_y:
+                yt_list.append(y_p[0])
+            else:
+                yt_list.append(y_p[1])
+            
+        return (yt_list, (ht_1, ct_1))

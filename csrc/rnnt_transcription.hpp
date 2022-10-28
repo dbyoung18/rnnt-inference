@@ -53,28 +53,32 @@ struct Transcription {
     at::Tensor hy_layer, cy_layer;
     std::vector<at::Tensor> hy_list, cy_list;
     auto num_layers = hx.sizes()[0];
+    auto x_p = torch::split(x,1);
     for (int64_t layer = 0; layer < num_layers; layer++) {
-      std::tie(x, hy_layer, cy_layer) = lstm_layer_forward(
-          *cell_ptr++, x, hx[layer], cx[layer], layer==(num_layers-1) && quant_last_layer);
+        std::tie(x_p, hy_layer, cy_layer) = lstm_layer_forward(
+            *cell_ptr++, x_p, hx[layer], cx[layer], layer==(num_layers-1) && quant_last_layer);
       hy_list.emplace_back(hy_layer);
       cy_list.emplace_back(cy_layer);
     }
     auto hy = at::stack(hy_list, 0);
     auto cy = at::stack(cy_list, 0);
+    x = at::stack(x_p,0);
     return {x, hy, cy};
   }
 
-  std::tuple<at::Tensor, at::Tensor, at::Tensor> lstm_layer_forward (
-      Module lstm_cell, at::Tensor x, at::Tensor hx, at::Tensor cx, bool quant_y) {
+  std::tuple<std::vector<at::Tensor>, at::Tensor, at::Tensor> lstm_layer_forward (
+      Module lstm_cell, std::vector<at::Tensor> x, at::Tensor hx, at::Tensor cx, bool quant_y) {
     std::vector<at::Tensor> y_list;
-    for (int64_t step = 0; step < x.sizes()[0]; step++) {
-      auto outputs = lstm_cell({x[step], hx, cx, quant_y}).toTensorList();
-      y_list.emplace_back(outputs[0]);
-      hx = outputs[1];
-      cx = outputs[2];
+    auto outputs = lstm_cell({x, hx, cx, quant_y}).toTuple()->elements();
+    auto cell_y = outputs[0].toTensorList();
+    auto hx_cx_tuple = outputs[1].toTuple()->elements();
+    for (int64_t step = 0; step < x.size(); step++) {
+      y_list.emplace_back(cell_y[step]);
     }
-    auto y = at::stack(y_list, 0);
-    return {y, hx, cx};
+    hx = hx_cx_tuple[0].toTensor();
+    cx = hx_cx_tuple[1].toTensor();
+    // auto y = at::stack(y_list, 0);
+    return {y_list, hx, cx};
   }
 };
 

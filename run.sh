@@ -5,7 +5,7 @@ set -ex
 : ${CONDA_ENV=${1:-'rnnt-infer'}}
 : ${WORK_DIR=${2:-${PWD}/mlperf-rnnt-librispeech}}
 : ${LOCAL_DATA_DIR=${WORK_DIR}/local_data}
-: ${STAGE=${3:--2}}
+: ${STAGE=${3:-5}}
 
 mkdir -p ${WORK_DIR}
 
