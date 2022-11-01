@@ -53,9 +53,9 @@ class RNNT(torch.nn.Module):
             self.transcription.post_rnn._process_parameters(run_mode)
             # self.joint.linear1_trans._quant_parameters(run_mode)
             if run_mode == "quant":
+                self.transcription.pre_rnn.lstm1.output_quantizer = self.transcription.post_rnn.lstm0.input_quantizer
                 self.transcription.pre_rnn._propagate_quantizers()
                 self.transcription.post_rnn._propagate_quantizers()
-                self.transcription.pre_rnn.lstm1.output_quantizer = self.transcription.post_rnn.lstm0.input_quantizer
                 self.transcription.pre_quantizer = self.transcription.pre_rnn.lstm0.input_quantizer
                 self.transcription.post_quantizer = self.transcription.post_rnn.lstm0.input_quantizer
         if load_jit == False:

@@ -13,6 +13,10 @@ class QuantLSTM(torch.nn.LSTM):
     def __init__(self, input_size, hidden_size, num_layers, quant_last_layer, **kwargs):
         super(QuantLSTM, self).__init__(input_size, hidden_size, num_layers, **kwargs)
         self.quant_last_layer = quant_last_layer
+        self.weights = []
+        self.o_scale_list = []
+        self.input_scale_list = []
+        self.output_scale_list = []
 
     def _init_cells(self, run_mode=None):
         input_size = self.input_size
@@ -48,7 +52,7 @@ class QuantLSTM(torch.nn.LSTM):
     def _process_parameters(self, run_mode):
         for layer in range(self.num_layers):
             if run_mode == "quant" or run_mode == "fake_quant":
-                getattr(self, f"lstm{layer}")._quant_parameters()
+                getattr(self, f"lstm{layer}")._quant_parameters(self.weights, self.o_scale_list)
             delattr(self, self._all_weights[layer][0])
             delattr(self, self._all_weights[layer][1])
             delattr(self, self._all_weights[layer][2])
@@ -68,6 +72,8 @@ class QuantLSTM(torch.nn.LSTM):
                 cur_cell = getattr(self, f"lstm{layer}")
                 next_cell = getattr(self, f"lstm{layer+1}")
                 cur_cell.output_quantizer = next_cell.input_quantizer
+            self.input_scale_list.append(getattr(self, f"lstm{layer}").input_quantizer.scale.item())
+            self.output_scale_list.append(getattr(self, f"lstm{layer}").output_quantizer.scale.item())
 
 
     @torch.jit.ignore
@@ -79,27 +85,25 @@ class QuantLSTM(torch.nn.LSTM):
                     dtype=torch.float16)
         else:
             (hx, cx) = state[:]
-
-        x = list(torch.split(x,1))
-        # x = x.contiguous()
-        hy_list, cy_list = [], []
-        for layer in range(self.num_layers):
-            x, (hy_layer, cy_layer) = self.lstm_layer(x, hx[layer], cx[layer], layer)
-            hy_list.append(hy_layer)
-            cy_list.append(cy_layer)
-        hy = torch.stack(hy_list, 0)
-        cy = torch.stack(cy_list, 0)
-        x = torch.stack(x,0)
+        # print(self.weights)
+        T = 2
+        x, hy, cy = P.lstm_int8(x, hx, cx, self.weights, self.o_scale_list, self.input_scale_list, self.output_scale_list, T==1, self.quant_last_layer)
+        # x = list(torch.split(x,1))
+        # hy_list, cy_list = [], []
+        # for layer in range(self.num_layers):
+        #     x, (hy_layer, cy_layer) = self.lstm_layer(x, hx[layer], cx[layer], layer)
+        #     hy_list.append(hy_layer)
+        #     cy_list.append(cy_layer)
+        # hy = torch.stack(hy_list, 0)
+        # cy = torch.stack(cy_list, 0)
+        # x = torch.stack(x,0)
         return x, (hy, cy)
 
     @torch.jit.ignore
     def lstm_layer(self, x: List[Tensor], hx: Tensor, cx: Tensor, layer: int) -> Tuple[List[Tensor], Tuple[Tensor, Tensor]]:
-        y_list = []
         (cell_y, (hx, cx)) = getattr(self, f"lstm{layer}")(
             x, hx, cx, layer==(self.num_layers-1) and self.quant_last_layer)
-        for step in range(len(x)):
-            y_list.append(cell_y[step])
-        return y_list, (hx, cx)
+        return cell_y, (hx, cx)
 
 
 class QuantLSTMCell(nn.LSTMCell):
@@ -181,7 +185,7 @@ class iLSTMCell(QuantLSTMCell):
     def __init__(self, input_size: int, hidden_size: int, **kwargs) -> None:
         super(iLSTMCell, self).__init__(input_size, hidden_size, **kwargs)
 
-    def _quant_parameters(self) -> None:
+    def _quant_parameters(self, weights, o_scale_list) -> None:
         self.weight_quantizer.amax = torch.max(
             torch.cat([self.weight_ih, self.weight_hh], 1).abs())
         self.weight_ih = Parameter(
@@ -194,6 +198,9 @@ class iLSTMCell(QuantLSTMCell):
         self.o_scale = 1 / b_scale.item()
         self.in_quant_scale = self.input_quantizer.scale.item()
         # self.out_quant_scale = self.output_quantizer.scale.item()
+        weights_layer = [self.weight_ih, self.weight_hh, self.bias_ih, self.bias_hh]
+        weights.append(weights_layer)
+        o_scale_list.append(self.o_scale)
 
     def forward(self, x: List[Tensor], ht_1: Tensor, ct_1: Tensor, quant_y: bool) -> Tuple[List[Tensor], Tuple[Tensor, Tensor]]:
         gates_list = []
