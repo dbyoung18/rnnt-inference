@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -x
+set -ex
 export LD_PRELOAD=${CONDA_PREFIX}/lib/libjemalloc.so
 export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:percpu,metadata_thp:always,dirty_decay_ms:30000,muzzy_decay_ms:-1"
 
@@ -24,6 +24,7 @@ SUT_DIR=$(pwd)
 EXECUTABLE=${SUT_DIR}/build/rnnt_inference
 WORK_DIR=${SUT_DIR}/mlperf-rnnt-librispeech
 OUT_DIR="${SUT_DIR}/logs/${SCENARIO}_${VERSION}_${PIPELINE}_BS${BS}_${INTER}_${INTRA}"
+[ ${ACCURACY} == "true" ] && OUT_DIR+="_acc"
 mkdir -p ${OUT_DIR} ${WORK_DIR}
 
 if [[ ${SCENARIO} == "Offline" ]]; then
@@ -73,7 +74,8 @@ if [[ ${ACCURACY} == true ]]; then
   export PYTHONPATH=${PWD}:${PWD}/models/:${PYTHONPATH}
   python -u eval_accuracy.py \
     --log_path=${OUT_DIR}/mlperf_log_accuracy.json \
-    --manifest_path=${WORK_DIR}/local_data/wav/dev-clean-wav.json
+    --manifest_path=${WORK_DIR}/local_data/wav/dev-clean-wav.json \
+  2>&1 | tee ${OUT_DIR}/accuracy.txt
 fi
 
 set +x

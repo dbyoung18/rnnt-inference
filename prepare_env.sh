@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -x
+set -ex
 
 CONDA_ENV=${1:-'rnnt-infer'}
 HOME_DIR=${2:-${PWD}}

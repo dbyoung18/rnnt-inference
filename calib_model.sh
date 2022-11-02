@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -x 
+set -ex
 
 : ${WORK_DIR=${1:-${PWD}/mlperf-rnnt-librispeech}}
 : ${BS=${2:-128}}
