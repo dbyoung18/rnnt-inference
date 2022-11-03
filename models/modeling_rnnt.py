@@ -39,14 +39,14 @@ class RNNT(torch.nn.Module):
             model = torch.load(model_path, map_location="cpu")
             state_dict = migrate_state_dict(model)
             if saved_quantizers:
-                self.transcription.pre_rnn._init_cells(run_mode)
-                self.transcription.post_rnn._init_cells(run_mode)
+                self.transcription.pre_rnn._init_layers(run_mode)
+                self.transcription.post_rnn._init_layers(run_mode)
                 # self.joint.linear1_trans._init_quantizers(run_mode)
                 self.load_state_dict(state_dict, strict=False)
             else:
                 self.load_state_dict(state_dict, strict=False)
-                self.transcription.pre_rnn._init_cells(run_mode)
-                self.transcription.post_rnn._init_cells(run_mode)
+                self.transcription.pre_rnn._init_layers(run_mode)
+                self.transcription.post_rnn._init_layers(run_mode)
                 # self.joint.linear1_trans._init_quantizers(run_mode)
 
             self.transcription.pre_rnn._process_parameters(run_mode)
@@ -85,8 +85,8 @@ class Transcription(torch.nn.Module):
     @torch.jit.ignore
     def forward(self,
             f: Tensor, f_lens: Tensor,
-            pre_state: Tuple[Tensor, Tensor]=None,
-            post_state: Tuple[Tensor, Tensor]=None) -> Tuple[Tensor, Tensor]:
+            pre_state: Tuple[List[Tensor], List[Tensor]]=None,
+            post_state: Tuple[List[Tensor], List[Tensor]]=None) -> Tuple[Tensor, Tensor]:
         """
         Args:
           f: {T, N, IC}
