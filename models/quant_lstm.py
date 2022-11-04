@@ -123,8 +123,9 @@ class QuantLSTMLayer(nn.LSTMCell):
     def forward(self, xt: Tensor, ht_1: Tensor, ct_1: Tensor, quant_y: bool=False) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
         if hasattr(self, "input_quantizer"):
             if self.input_quantizer.mode != None:
-                xt, ht_1 = self.input_quantizer(
-                    torch.cat([xt, ht_1], 1)).split([xt.size(1), ht_1.size(1)], 1)
+                for i in range(xt.shape[0]):
+                    xt[i], ht_1 = self.input_quantizer(
+                        torch.cat([xt[i], ht_1], 1)).split([xt[i].size(1), ht_1.size(1)], 1)
         gates_list = []
         for i in range(xt.shape[0]):
             gates = F.linear(xt[i], self.weight_ih, self.bias_ih)
