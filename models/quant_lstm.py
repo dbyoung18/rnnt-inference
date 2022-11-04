@@ -10,9 +10,9 @@ from typing import List, Optional, Tuple
 
 
 class QuantLSTM(torch.nn.LSTM):
-    def __init__(self, input_size, hidden_size, num_layers, quant_last_layer, **kwargs):
+    def __init__(self, input_size, hidden_size, num_layers, skip_quant_y, **kwargs):
         super(QuantLSTM, self).__init__(input_size, hidden_size, num_layers, **kwargs)
-        self.quant_last_layer = quant_last_layer
+        self.skip_quant_y = skip_quant_y
         self.weights = []
         self.o_scale_list = []
         self.input_scale_list = []
@@ -89,7 +89,7 @@ class QuantLSTM(torch.nn.LSTM):
             (hx, cx) = state[:]
 
         for layer in range(self.num_layers):
-            x, (hx[layer], cx[layer]) = getattr(self, f"lstm{layer}")(x, hx[layer], cx[layer], layer==(self.num_layers-1) and self.quant_last_layer)
+            x, (hx[layer], cx[layer]) = getattr(self, f"lstm{layer}")(x, hx[layer], cx[layer], layer==(self.num_layers-1) and self.skip_quant_y)
         return (x, (hx, cx))
 
 class QuantLSTMLayer(nn.LSTMCell):
@@ -166,7 +166,7 @@ class iLSTMLayer(QuantLSTMLayer):
         weights.append(weights_layer)
         o_scale_list.append(self.o_scale)
 
-    def forward(self, x: Tensor, ht_1: Tensor, ct_1: Tensor, quant_last_layer: bool) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
+    def forward(self, x: Tensor, ht_1: Tensor, ct_1: Tensor, skip_quant_y: bool) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
         gates_list = []
         for i in range(x.shape[0]):
             gates = P.linear(x[i].squeeze(0), self.weight_ih, self.bias_ih, self.o_scale, None)
@@ -178,11 +178,11 @@ class iLSTMLayer(QuantLSTMLayer):
 
             it, ft, gt, ot = gates_list[i].chunk(4, 1)
             y_p = P.lstm_postop(it, ft, gt, ot, ct_1,
-                self.in_quant_scale, self.output_quantizer.scale.item(), quant_last_layer)
+                self.in_quant_scale, self.output_quantizer.scale.item(), skip_quant_y)
             
             ht_1 = y_p[2]
             ct_1 = y_p[3]
-            if quant_last_layer:
+            if skip_quant_y:
                 yt_list.append(y_p[0])
             else:
                 yt_list.append(y_p[1])

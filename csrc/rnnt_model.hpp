@@ -72,14 +72,23 @@ public:
     auto res = torch::full({batch_size, x_lens.max().item().toInt()*3}, SOS, torch::dtype(torch::kInt64));
     auto res_idx = torch::full({batch_size}, -1, torch::dtype(torch::kInt64));
     // init transcription tensors
-    auto pre_hx = torch::zeros(
-        {pre_num_layers, batch_size, trans_hidden_size}, torch::dtype(torch::kInt8));
-    auto pre_cx = torch::zeros(
-        {pre_num_layers, batch_size, trans_hidden_size}, torch::dtype(torch::kFloat16));
-    auto post_hx = torch::zeros(
-        {post_num_layers, batch_size, trans_hidden_size}, torch::dtype(torch::kInt8));
-    auto post_cx = torch::zeros(
-        {post_num_layers, batch_size, trans_hidden_size}, torch::dtype(torch::kFloat16));
+    std::vector<at::Tensor> pre_hx(pre_num_layers);
+    std::vector<at::Tensor> pre_cx(pre_num_layers);
+    std::vector<at::Tensor> post_hx(post_num_layers);
+    std::vector<at::Tensor> post_cx(post_num_layers);
+    for(int i = 0; i < pre_num_layers; i++){
+      pre_hx[i] = torch::zeros(
+          {batch_size, trans_hidden_size}, torch::dtype(torch::kInt8));
+      pre_cx[i] = torch::zeros(
+          {batch_size, trans_hidden_size}, torch::dtype(torch::kFloat16));
+    }
+    for(int i = 0; i < post_num_layers; i++){
+      post_hx[i] = torch::zeros(
+          {batch_size, trans_hidden_size}, torch::dtype(torch::kInt8));
+      post_cx[i] = torch::zeros(
+          {batch_size, trans_hidden_size}, torch::dtype(torch::kFloat16));
+    }
+
     // init prediction tensors
     auto pred_g = torch::full({1, batch_size}, SOS, torch::dtype(torch::kLong));
     auto pred_dtype_ = enable_bf16_ ? at::ScalarType::BFloat16 : torch::kFloat32;
@@ -103,8 +112,8 @@ public:
 
   void greedy_decode (
       RNNT model, at::Tensor f, at::Tensor f_lens,
-      at::Tensor& pre_hx, at::Tensor& pre_cx,
-      at::Tensor& post_hx, at::Tensor& post_cx,
+      std::vector<at::Tensor>& pre_hx, std::vector<at::Tensor>& pre_cx,
+      std::vector<at::Tensor>& post_hx, std::vector<at::Tensor>& post_cx,
       at::Tensor& pred_g, at::Tensor& pred_hg, at::Tensor& pred_cg,
       at::Tensor& res,
       at::Tensor& res_idx) {

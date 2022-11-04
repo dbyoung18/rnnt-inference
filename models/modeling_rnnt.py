@@ -71,14 +71,14 @@ class Transcription(torch.nn.Module):
             RNNTParam.trans_input_size,
             RNNTParam.trans_hidden_size,
             RNNTParam.pre_num_layers,
-            quant_last_layer=False
+            skip_quant_y=False
         )
         self.stack_time = StackTime(RNNTParam.stack_time_factor)
         self.post_rnn = LSTM(
             RNNTParam.trans_hidden_size*RNNTParam.stack_time_factor,
             RNNTParam.trans_hidden_size,
             RNNTParam.post_num_layers,
-            quant_last_layer=True
+            skip_quant_y=True
         )
         self.run_mode = run_mode
 
