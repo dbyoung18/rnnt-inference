@@ -55,9 +55,8 @@ struct Transcription {
         auto skip_quant = (layer == (num_layers-1)) && skip_quant_y;
         auto output = (*layer_ptr++)({x, hx[layer], cx[layer], skip_quant}).toTuple()->elements();
         x = output[0].toTensor();
-        auto state = output[1].toTuple()->elements();
-        hx[layer] = state[0].toTensor();
-        cx[layer] = state[1].toTensor();
+        hx[layer] = output[1].toTensor();
+        cx[layer] = output[2].toTensor();
       }
       return {x, hx, cx};
     }

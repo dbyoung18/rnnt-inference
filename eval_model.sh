@@ -7,7 +7,7 @@ set -ex
 : ${LEN:=-1}
 : ${LOG_LEVEL=${3:-10}}
 : ${INTER:=1}
-: ${INTRA:=8}
+: ${INTRA:=4}
 : ${SCENARIO:=Offline}
 : ${DEBUG:=false}
 : ${MODE:=f32}

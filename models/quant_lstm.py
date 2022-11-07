@@ -120,7 +120,7 @@ class QuantLSTMLayer(nn.LSTMCell):
         self.weight_hh = Parameter(
             self.weight_quantizer(self.weight_hh), requires_grad=False)
 
-    def forward(self, xt: Tensor, ht_1: Tensor, ct_1: Tensor, quant_y: bool=False) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
+    def forward(self, xt: Tensor, ht_1: Tensor, ct_1: Tensor, quant_y: bool=False) -> Tuple[Tensor, Tensor, Tensor]:
         if hasattr(self, "input_quantizer"):
             if self.input_quantizer.mode != None:
                 for i in range(xt.shape[0]):
@@ -168,7 +168,7 @@ class iLSTMLayer(QuantLSTMLayer):
         weights.append(weights_layer)
         o_scale_list.append(self.o_scale)
 
-    def forward(self, x: Tensor, ht_1: Tensor, ct_1: Tensor, skip_quant_y: bool) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
+    def forward(self, x: Tensor, ht_1: Tensor, ct_1: Tensor, skip_quant_y: bool) -> Tuple[Tensor, Tensor, Tensor]:
         if not self.first_layer:
             return P.lstm_layer_int8(x, ht_1, ct_1, self.weight_ih, self.weight_hh, self.bias_ih, self.bias_hh, self.o_scale, self.in_quant_scale, self.output_quantizer.scale.item(), skip_quant_y)
         gates_list = []

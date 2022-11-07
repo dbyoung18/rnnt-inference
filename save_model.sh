@@ -6,7 +6,7 @@ set -ex
 : ${BATCH_SIZE=${2:-128}}
 : ${LOG_LEVEL=${3:-10}}
 : ${INTER:=1}
-: ${INTRA:=8}
+: ${INTRA:=4}
 : ${MODEL_PATH=${4:-${WORK_DIR}/rnnt_calib.pt}}
 : ${MODE:=quant}
 : ${BF16:=true}
