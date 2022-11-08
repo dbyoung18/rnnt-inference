@@ -5,7 +5,7 @@ from config import RNNTParam
 from torch import Tensor
 from torch.nn import Linear
 from torch.nn.parameter import Parameter
-from quant_lstm import QuantLSTM as LSTM
+from quant_lstm import QuantLSTM, iLSTM
 from typing import List, Tuple
 from utils import *
 
@@ -23,16 +23,7 @@ class RNNT(torch.nn.Module):
     def _load_model(self, model_path, run_mode=None, enable_bf16=False, load_jit=False, saved_quantizers=False):
         if load_jit and os.path.exists(model_path):
             model = torch.jit.load(model_path, map_location="cpu")
-            if saved_quantizers:
-                self.transcription.pre_quantizer = model.transcription.pre_quantizer
-            self.transcription.pre_rnn.lstm0 = model.transcription.pre_rnn.lstm0
-            self.transcription.pre_rnn.lstm1 = model.transcription.pre_rnn.lstm1
-            self.transcription.stack_time = model.transcription.stack_time
-            if saved_quantizers:
-                self.transcription.post_quantizer = model.transcription.post_quantizer
-            self.transcription.post_rnn.lstm0 = model.transcription.post_rnn.lstm0
-            self.transcription.post_rnn.lstm1 = model.transcription.post_rnn.lstm1
-            self.transcription.post_rnn.lstm2 = model.transcription.post_rnn.lstm2
+            self.transcription = model.transcription
             self.prediction = model.prediction
             self.joint = model.joint
         else:
@@ -68,26 +59,39 @@ class RNNT(torch.nn.Module):
 class Transcription(torch.nn.Module):
     def __init__(self, run_mode, **kwargs):
         super().__init__()
-        self.pre_rnn = LSTM(
-            RNNTParam.trans_input_size,
-            RNNTParam.trans_hidden_size,
-            RNNTParam.pre_num_layers,
-            skip_quant_y=False
-        )
+        if run_mode == "quant":
+            self.pre_rnn = iLSTM(
+                RNNTParam.trans_input_size,
+                RNNTParam.trans_hidden_size,
+                RNNTParam.pre_num_layers,
+                skip_quant_y=False
+            )
+            self.post_rnn = iLSTM(
+                RNNTParam.trans_hidden_size*RNNTParam.stack_time_factor,
+                RNNTParam.trans_hidden_size,
+                RNNTParam.post_num_layers,
+                skip_quant_y=True
+            )
+        else:
+            self.pre_rnn = QuantLSTM(
+                RNNTParam.trans_input_size,
+                RNNTParam.trans_hidden_size,
+                RNNTParam.pre_num_layers,
+                skip_quant_y=False
+            )
+            self.post_rnn = QuantLSTM(
+                RNNTParam.trans_hidden_size*RNNTParam.stack_time_factor,
+                RNNTParam.trans_hidden_size,
+                RNNTParam.post_num_layers,
+                skip_quant_y=True
+            )
         self.stack_time = StackTime(RNNTParam.stack_time_factor)
-        self.post_rnn = LSTM(
-            RNNTParam.trans_hidden_size*RNNTParam.stack_time_factor,
-            RNNTParam.trans_hidden_size,
-            RNNTParam.post_num_layers,
-            skip_quant_y=True
-        )
         self.run_mode = run_mode
 
-    @torch.jit.ignore
     def forward(self,
             f: Tensor, f_lens: Tensor,
-            pre_state: Tuple[List[Tensor], List[Tensor]]=None,
-            post_state: Tuple[List[Tensor], List[Tensor]]=None) -> Tuple[Tensor, Tensor]:
+            pre_state: Tuple[List[Tensor], List[Tensor]],
+            post_state: Tuple[List[Tensor], List[Tensor]]) -> Tuple[Tensor, Tensor, Tuple[List[Tensor], List[Tensor]], Tuple[List[Tensor], List[Tensor]]]:
         """
         Args:
           f: {T, N, IC}
