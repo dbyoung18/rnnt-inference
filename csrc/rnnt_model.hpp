@@ -5,7 +5,6 @@
 #include <torch/script.h>
 #include <ATen/Parallel.h>
 #include "rnnt_qsl.hpp"
-#include "rnnt_transcription.hpp"
 
 using namespace torch::indexing;
 
@@ -17,7 +16,7 @@ static const std::vector<char> LABELS = {
   'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '\''};
 
 struct RNNT {
-  Transcription transcription;
+  Module transcription;
   Module prediction;
   Module joint;
 
@@ -26,7 +25,7 @@ struct RNNT {
   RNNT(Module model) {
     model.eval();
     auto module_ptr = model.children().begin();
-    transcription = Transcription(*module_ptr++);
+    transcription = *module_ptr++;
     prediction = *module_ptr++;
     joint = *module_ptr;
   }
@@ -124,7 +123,13 @@ public:
     auto finish = f_lens.eq(0);
     auto fi_idx = torch::range(0, batch_size-1, torch::dtype(torch::kLong));
     // 1. do transcription
-    std::tie(f, f_lens, pre_hx, pre_cx, post_hx, post_cx) = model.transcription.forward(f, f_lens, pre_hx, pre_cx, post_hx, post_cx);
+    auto trans_res = model.transcription({f, f_lens, std::make_tuple(pre_hx, pre_cx), std::make_tuple(post_hx, post_cx)}).toTuple()->elements();
+    f = trans_res[0].toTensor();
+    f_lens = trans_res[1].toTensor();
+    pre_hx = trans_res[2].toTuple()->elements()[0].toTensorList().vec();
+    pre_cx = trans_res[2].toTuple()->elements()[1].toTensorList().vec();
+    post_hx = trans_res[3].toTuple()->elements()[0].toTensorList().vec();
+    post_cx = trans_res[3].toTuple()->elements()[1].toTensorList().vec();
     auto eos_idx = (f_lens-1).clamp(0);
     if (enable_bf16_)
       f = f.to(at::ScalarType::BFloat16);

@@ -26,6 +26,22 @@ class GreedyDecoder(torch.nn.Module):
         self.res = torch.full((self.batch_size, RNNTParam.max_symbols_per_step*x_lens.max().item()), -1)
         self.res_idx = torch.full((self.batch_size,), -1)
         self.step = torch.zeros((self.batch_size, 2))  # debug only
+        # TODO
+        # python load_jit=true need to init pre_state and post_state
+        # hx_pre, cx_pre = [], []
+        # for i in range(RNNTParam.pre_num_layers):
+        #     hx_pre.append(torch.zeros(x.size(1), RNNTParam.trans_hidden_size,
+        #             dtype=torch.int8))
+        #     cx_pre.append(torch.zeros(x.size(1), RNNTParam.trans_hidden_size,
+        #             dtype=torch.float16))
+        # self.pre_state = (hx_pre, cx_pre)
+        # hx_post, cx_post = [], []
+        # for i in range(RNNTParam.post_num_layers):
+        #     hx_post.append(torch.zeros(x.size(1), RNNTParam.trans_hidden_size,
+        #             dtype=torch.int8))
+        #     cx_post.append(torch.zeros(x.size(1), RNNTParam.trans_hidden_size,
+        #             dtype=torch.float16))
+        # self.post_state = (hx_post, cx_post)
         # init transcription tensors
         self.pre_state = None
         self.post_state = None
