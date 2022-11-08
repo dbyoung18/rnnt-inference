@@ -34,7 +34,7 @@ class PytorchSUT:
         else:
             from modeling_rnnt import RNNT
         rnnt = RNNT(model_path, run_mode, args.enable_bf16, args.load_jit).eval()
-        self.model = GreedyDecoder(rnnt, args.enable_bf16, args.split_len)
+        self.model = GreedyDecoder(rnnt, run_mode, args.enable_bf16, args.split_len)
         self.enable_preprocess = (self.preprocessor != None)
         self.scenario = args.scenario if run_mode != "calib" else None
         self.batch_sort = True if self.scenario == "Offline" else False
