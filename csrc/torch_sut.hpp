@@ -8,6 +8,7 @@
 #include <mutex>
 #include <thread>
 #include <vector>
+#include <queue>
 #include <atomic>
 
 #include <query_sample.h>
@@ -36,21 +37,23 @@ private:
 
 class RNNTSUT : public mlperf::SystemUnderTest {
   using Queue_t = std::list<mlperf::QuerySample>;
+  using Map_t = std::pair<mlperf::ResponseId, std::tuple<mlperf::QuerySample, rnnt::TensorVector, rnnt::TensorVector>>;
 public:
   // configure inter parallel and intra paralel
   RNNTSUT (
       const std::string& model_file,
       const std::string& samples_file,
       const std::string& preprocessor_file,
+      int pre_parallel,
       int inter_parallel,
       int intra_parallel,
+      int pre_batch_size,
       int batch_size,
-      int split_len,
+      long split_len = -1,
       bool enable_bf16 = true,
       bool ht = true,
-      bool pipeline = false,
-      bool preprocessor = true,
       std::string test_scenario = "Offline",
+      bool preprocessor = true,
       bool profiler = false,
       const std::string& profiler_foler = "",
       int profiler_iter = -1
@@ -97,26 +100,30 @@ private:
 
   Queue_t mQueue_;
   bool mStop_ {false};
-  moodycamel::BlockingConcurrentQueue<std::pair<qsl::Stack, std::vector<mlperf::QuerySample>>> mQueuePreprocessed_;
 
   std::vector<std::thread> mInstances_;
+  int nPreprocessors_;
   int nInstances_;
   int nProcsPerInstance_;
   // Control over max samples a instance will peek
+  size_t mPreThreshold_;
   size_t mThreshold_;
+  long split_len_;
+  bool enable_bf16_;
   bool mHt_;
-  // std::unique_ptr<ProfileRecord> guard_;
-  bool pipeline_flag_;
-  bool preprocessor_flag_;
   std::string test_scenario_;
+  bool preprocessor_flag_;
+  moodycamel::BlockingConcurrentQueue<std::tuple<mlperf::QuerySample, at::Tensor, at::Tensor>> mQueuePreprocessed_;
+  // std::unique_ptr<ProfileRecord> guard_;
   bool profiler_flag_;
   std::string profiler_folder_;
   size_t profiler_iter_;
-  bool batch_sort_;
+  bool batch_sort_;  // Offline only
+  bool pipeline_flag_;  // Server only
 
-  int rootProc(int index);
+  int rootProc(int index, bool model_worker);
   void thInstance(int index);
-  void thInstancePreprocess(int index);
+  void thInstancePreprocessor(int index);
   void thInstanceModel(int index);
 };
 

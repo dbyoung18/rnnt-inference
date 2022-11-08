@@ -6,16 +6,17 @@ export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:per
 
 : ${BS:=128}
 : ${LEN:=-1}
-: ${BF16:=true}
+: ${PRE_BS:=32}
+: ${PRE_INTRA:=8}
 : ${INTER:=28}
 : ${INTRA:=4}
+: ${BF16:=true}
 : ${SCENARIO=${2:-"Offline"}}
 : ${ACCURACY:=false}
 : ${PROFILE:=false}
 : ${DEBUG:=false}
 : ${MODE:=quant}
 : ${WAV:=false}
-: ${PIPELINE:=false}
 : ${HT:=true}
 : ${COUNT:=3}
 : ${VERSION=${1:-"original"}}
@@ -23,8 +24,7 @@ export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:per
 SUT_DIR=$(pwd)
 EXECUTABLE=${SUT_DIR}/build/rnnt_inference
 WORK_DIR=${SUT_DIR}/mlperf-rnnt-librispeech
-OUT_DIR="${SUT_DIR}/logs/${SCENARIO}_${VERSION}_${PIPELINE}_BS${BS}_${INTER}_${INTRA}"
-[ ${ACCURACY} == "true" ] && OUT_DIR+="_acc"
+OUT_DIR="${SUT_DIR}/logs/${SCENARIO}_${VERSION}_${WAV}_PBS${PRE_BS}_BS${BS}_${PRE_INTRA}_${INTER}_${INTRA}_SL${LEN}"
 mkdir -p ${OUT_DIR} ${WORK_DIR}
 
 if [[ ${SCENARIO} == "Offline" ]]; then
@@ -58,7 +58,9 @@ fi
 [ ${HT} == false ]  && SCRIPT_ARGS+=" --disable-hyperthreading"
 [ ${PROFILE} == true ] && SCRIPT_ARGS+=" --profiler"
 [ ${ACCURACY} == true ] && SCRIPT_ARGS+=" --accuracy"
-[ ${PIPELINE} == true ] && SCRIPT_ARGS+=" --pipeline"
+if [[ ${SCENARIO} == "Server" ]]; then
+  SCRIPT_ARGS+=" --pre_parallel ${PRE_INTRA} --pre_batch_size ${PRE_BS}"
+fi
 if [[ ${ACCURACY} != true && ${COUNT} != "" ]]; then
   SCRIPT_ARGS+=" --profiler_iter ${COUNT}"
 fi
@@ -74,9 +76,7 @@ if [[ ${ACCURACY} == true ]]; then
   export PYTHONPATH=${PWD}:${PWD}/models/:${PYTHONPATH}
   python -u eval_accuracy.py \
     --log_path=${OUT_DIR}/mlperf_log_accuracy.json \
-    --manifest_path=${WORK_DIR}/local_data/wav/dev-clean-wav.json \
-  2>&1 | tee ${OUT_DIR}/accuracy.txt
+    --manifest_path=${WORK_DIR}/local_data/wav/dev-clean-wav.json
 fi
 
 set +x
-

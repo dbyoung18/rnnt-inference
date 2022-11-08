@@ -14,9 +14,9 @@ class iLSTM(torch.nn.LSTM):
         super(iLSTM, self).__init__(input_size, hidden_size, num_layers, **kwargs)
         self.skip_quant_y = skip_quant_y
         self.weights = []
-        self.o_scale_tensor = torch.zeros(num_layers)
-        self.in_scale_tensor = torch.zeros(num_layers)
-        self.out_scale_tensor = torch.zeros(num_layers)
+        self.rb_scale = torch.zeros(num_layers)
+        self.in_scale = torch.zeros(num_layers)
+        self.out_scale = torch.zeros(num_layers)
         self.run_mode = None
 
     def _init_layers(self, run_mode=None):
@@ -54,7 +54,7 @@ class iLSTM(torch.nn.LSTM):
     def _process_parameters(self, run_mode):
         for layer in range(self.num_layers):
             if run_mode == "quant" or run_mode == "fake_quant":
-                getattr(self, f"lstm{layer}")._quant_parameters(self.weights, self.o_scale_tensor)
+                getattr(self, f"lstm{layer}")._quant_parameters(self.weights, self.rb_scale)
             delattr(self, self._all_weights[layer][0])
             delattr(self, self._all_weights[layer][1])
             delattr(self, self._all_weights[layer][2])
@@ -67,42 +67,30 @@ class iLSTM(torch.nn.LSTM):
                 cur_cell = getattr(self, f"lstm{layer}")
                 next_cell = getattr(self, f"lstm{layer+1}")
                 cur_cell.output_quantizer = next_cell.input_quantizer
-            self.in_scale_tensor[layer] = getattr(self, f"lstm{layer}").input_quantizer.scale.item()
-            self.out_scale_tensor[layer] = getattr(self, f"lstm{layer}").output_quantizer.scale.item()
+            self.in_scale[layer] = getattr(self, f"lstm{layer}").input_quantizer.scale.item()
+            self.out_scale[layer] = getattr(self, f"lstm{layer}").output_quantizer.scale.item()
 
+    def forward(self, x: Tensor, hx: List[Tensor], cx: List[Tensor]) -> Tuple[Tensor, List[Tensor], List[Tensor]]:
+        if hx is None and cx is None:
+            hx = [torch.zeros((x.size(1), self.hidden_size), dtype=x.dtype) for layer in range(self.num_layers)]
+            cx = [torch.zeros((x.size(1), self.hidden_size), dtype=torch.float16) for layer in range(self.num_layers)]
+        x, hx, cx = P.lstm_int8(x, hx, cx, self.weights, self.rb_scale, self.in_scale, self.out_scale, self.skip_quant_y)
+        return x, hx, cx
 
-    # @torch.jit.ignore
-    def forward(self, x: Tensor, state: Optional[Tuple[List[Tensor], List[Tensor]]]) -> Tuple[Tensor, Tuple[List[Tensor], List[Tensor]]]:
-        hx, cx = [], []
-        if state is None:
-            for i in range(self.num_layers):
-                hx.append(torch.zeros(x.size(1), self.hidden_size,
-                        dtype=x.dtype))
-                cx.append(torch.zeros(x.size(1), self.hidden_size,
-                        dtype=torch.float16))
-        else:
-            (hx, cx) = state[:]
-        x, hx, cx = P.lstm_int8(x, hx, cx, self.weights, self.o_scale_tensor, self.in_scale_tensor, self.out_scale_tensor, self.skip_quant_y) 
-        return (x, (hx, cx))
 
 class QuantLSTM(iLSTM):
     def __init__(self, input_size, hidden_size, num_layers, skip_quant_y, **kwargs):
         super(iLSTM, self).__init__(input_size, hidden_size, num_layers, **kwargs)
 
     @torch.jit.ignore
-    def forward(self, x: Tensor, state: Optional[Tuple[List[Tensor], List[Tensor]]]) -> Tuple[Tensor, Tuple[List[Tensor], List[Tensor]]]:
-        hx, cx = [], []
-        if state is None:
-            for i in range(self.num_layers):
-                hx.append(torch.zeros(x.size(1), self.hidden_size,
-                        dtype=x.dtype))
-                cx.append(torch.zeros(x.size(1), self.hidden_size,
-                        dtype=torch.float16))
-        else:
-            (hx, cx) = state[:]
+    def forward(self, x: Tensor, hx: Optional[List[Tensor]], cx: Optional[List[Tensor]]) -> Tuple[Tensor, List[Tensor], List[Tensor]]:
+        if hx is None and cx is None:
+            hx = [torch.zeros((x.size(1), self.hidden_size), dtype=torch.float32) for layer in range(self.num_layers)]
+            cx = [torch.zeros((x.size(1), self.hidden_size), dtype=torch.float32) for layer in range(self.num_layers)]
         for layer in range(self.num_layers):
             x, hx[layer], cx[layer] = getattr(self, f"lstm{layer}")(x, hx[layer], cx[layer])
-        return (x, (hx, cx))
+        return x, hx, cx
+
 
 class QuantLSTMLayer(nn.LSTMCell):
     def __init__(self, input_size: int, hidden_size: int, **kwargs) -> None:
@@ -124,38 +112,29 @@ class QuantLSTMLayer(nn.LSTMCell):
         self.bias_ih = b_ih
         self.bias_hh = b_hh
 
-    def _quant_parameters(self, weights, o_scale_list) -> None:
-        self.weight_quantizer.amax = torch.max(
-            torch.cat([self.weight_ih, self.weight_hh], 1).abs())
-        self.weight_ih = Parameter(
-            self.weight_quantizer(self.weight_ih), requires_grad=False)
-        self.weight_hh = Parameter(
-            self.weight_quantizer(self.weight_hh), requires_grad=False)
+    def _quant_parameters(self, weights, rb_scale_list) -> None:
+        self.weight_quantizer.amax = torch.max(torch.cat([self.weight_ih, self.weight_hh], 1).abs())
+        self.weight_ih = Parameter(self.weight_quantizer(self.weight_ih), requires_grad=False)
+        self.weight_hh = Parameter(self.weight_quantizer(self.weight_hh), requires_grad=False)
 
-    def forward(self, xt: Tensor, ht_1: Tensor, ct_1: Tensor, quant_y: bool=False) -> Tuple[Tensor, Tensor, Tensor]:
-        if hasattr(self, "input_quantizer"):
-            if self.input_quantizer.mode != None:
-                for i in range(xt.shape[0]):
-                    xt[i], ht_1 = self.input_quantizer(
-                        torch.cat([xt[i], ht_1], 1)).split([xt[i].size(1), ht_1.size(1)], 1)
-        gates_list = []
-        for i in range(xt.shape[0]):
-            gates = F.linear(xt[i], self.weight_ih, self.bias_ih)
-            gates_list.append(gates)
-
-        yt_list = []
-        for i in range(xt.shape[0]):
-            gates_list[i] += F.linear(ht_1, self.weight_hh, self.bias_hh)
-            it, ft, gt, ot = gates_list[i].chunk(4, 1)
+    def forward(self, x: Tensor, hx: Tensor, cx: Tensor, quant_y: bool=False) -> Tuple[Tensor, Tensor, Tensor]:
+        xt_list = []
+        for i in range(x.shape[0]):
+            if hasattr(self, "input_quantizer"):
+                if self.input_quantizer.mode != None:
+                    x[i], hx = self.input_quantizer(torch.cat([x[i], hx], 1)).split([x[i].size(1), hx.size(1)], 1)
+            gates = F.linear(x[i], self.weight_ih, self.bias_ih)
+            gates += F.linear(hx, self.weight_hh, self.bias_hh)
+            it, ft, gt, ot = gates.chunk(4, 1)
             it = torch.sigmoid(it)
             ft = torch.sigmoid(ft)
             gt = torch.tanh(gt)
             ot = torch.sigmoid(ot)
-            ct_1 = (ft * ct_1) + (it * gt)
-            ht_1 = ot * torch.tanh(ct_1)
-            yt_list.append(ht_1)
-        yt = torch.stack(yt_list, 0)
-        return yt, ht_1, ct_1
+            cx = (ft * cx) + (it * gt)
+            hx = ot * torch.tanh(cx)
+            xt_list.append(hx)
+        x = torch.stack(xt_list, 0)
+        return x, hx, cx
 
 
 class iLSTMLayer(QuantLSTMLayer):
@@ -163,45 +142,39 @@ class iLSTMLayer(QuantLSTMLayer):
         super(iLSTMLayer, self).__init__(input_size, hidden_size, **kwargs)
         self.first_layer = first_layer
 
-    def _quant_parameters(self, weights, o_scale_tensor) -> None:
-        self.weight_quantizer.amax = torch.max(
-            torch.cat([self.weight_ih, self.weight_hh], 1).abs())
-        self.weight_ih = Parameter(
-            self.weight_quantizer._quant_forward(self.weight_ih, self.first_layer), requires_grad=False)
-        self.weight_hh = Parameter(
-            self.weight_quantizer._quant_forward(self.weight_hh, self.first_layer), requires_grad=False)
+    def _quant_parameters(self, weights, rb_scale) -> None:
+        self.weight_quantizer.amax = torch.max(torch.cat([self.weight_ih, self.weight_hh], 1).abs())
+        self.weight_ih = Parameter(self.weight_quantizer._quant_forward(self.weight_ih, self.first_layer), requires_grad=False)
+        self.weight_hh = Parameter(self.weight_quantizer._quant_forward(self.weight_hh, self.first_layer), requires_grad=False)
         b_scale = self.input_quantizer.scale * self.weight_quantizer.scale
         self.bias_ih = Parameter(self.bias_ih * b_scale, requires_grad=False)
         self.bias_hh = Parameter(self.bias_hh * b_scale, requires_grad=False)
-        self.o_scale = 1 / b_scale.item()
+        self.rb_scale = 1 / b_scale.item()
         self.in_quant_scale = self.input_quantizer.scale.item()
-        # self.out_quant_scale = self.output_quantizer.scale.item()
+        self.out_quant_scale = self.output_quantizer.scale.item()
         weights_layer = [self.weight_ih, self.weight_hh, self.bias_ih, self.bias_hh]
-        o_scale_tensor[len(weights)] = self.o_scale
+        rb_scale[len(weights)] = self.rb_scale
         weights.append(weights_layer)
 
-    def forward(self, x: Tensor, ht_1: Tensor, ct_1: Tensor, skip_quant_y: bool) -> Tuple[Tensor, Tensor, Tensor]:
+    def forward(self, x: Tensor, hx: Tensor, cx: Tensor, skip_quant_y: bool) -> Tuple[Tensor, Tensor, Tensor]:
         if not self.first_layer:
-            return P.lstm_layer_int8(x, ht_1, ct_1, self.weight_ih, self.weight_hh, self.bias_ih, self.bias_hh, self.o_scale, self.in_quant_scale, self.output_quantizer.scale.item(), skip_quant_y)
+            return P.lstm_layer_int8(x, hx, cx, self.weight_ih, self.weight_hh, self.bias_ih, self.bias_hh,
+                    self.rb_scale, self.in_quant_scale, self.out_quant_scale, skip_quant_y)
         gates_list = []
         for i in range(x.shape[0]):
-            gates = P.linear(x[i], self.weight_ih, self.bias_ih, self.o_scale, None)
+            gates = P.linear(x[i], self.weight_ih, self.bias_ih, self.rb_scale, None)
             gates_list.append(gates)
 
-        yt_list = []
+        xt_list = []
         for i in range(x.shape[0]):
-            gates_list[i] += P.linear(ht_1, self.weight_hh, self.bias_hh, self.o_scale, None)
-
+            gates_list[i] += P.linear(hx, self.weight_hh, self.bias_hh, self.rb_scale, None)
             it, ft, gt, ot = gates_list[i].chunk(4, 1)
-            y_p = P.lstm_postop(it, ft, gt, ot, ct_1,
-                self.in_quant_scale, self.output_quantizer.scale.item(), skip_quant_y)
-            
-            ht_1 = y_p[2]
-            ct_1 = y_p[3]
-            if skip_quant_y:
-                yt_list.append(y_p[0])
-            else:
-                yt_list.append(y_p[1])
+            (x_f32, x_int8, hx, cx) = P.lstm_postop(it, ft, gt, ot, cx, self.in_quant_scale, self.out_quant_scale, skip_quant_y)
 
-        x = torch.stack(yt_list, 0)
-        return x, ht_1, ct_1
+            if skip_quant_y:
+                xt_list.append(x_f32)
+            else:
+                xt_list.append(x_int8)
+
+        x = torch.stack(xt_list, 0)
+        return x, hx, cx

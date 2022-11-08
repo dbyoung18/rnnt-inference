@@ -91,30 +91,32 @@ class Transcription(torch.nn.Module):
         self.run_mode = run_mode
 
     def forward(self,
-            f: Tensor, f_lens: Tensor,
-            pre_state: Tuple[List[Tensor], List[Tensor]],
-            post_state: Tuple[List[Tensor], List[Tensor]]) -> Tuple[Tensor, Tensor, Tuple[List[Tensor], List[Tensor]], Tuple[List[Tensor], List[Tensor]]]:
+            x: Tensor, x_lens: Tensor,
+            pre_hx: List[Tensor], pre_cx: List[Tensor],
+            post_hx: List[Tensor], post_cx: List[Tensor]) -> Tuple[Tensor, Tensor, List[Tensor], List[Tensor], List[Tensor], List[Tensor]]:
         """
         Args:
-          f: {T, N, IC}
-          f_lens: {N}
-          pre_state: ({D*L, N, C}, {D*L, N, C})
-          post_state: ({D*L, N, C}, {D*L, N, C})
+          x: {T, N, IC}
+          x_lens: {N}
+          pre_hx: [{N, C} * PRE_L]
+          pre_cx: [{N, C} * PRE_L]
+          post_hx: [{N, C} * POST_L]
+          post_hx: [{N, C} * POST_L]
 
         Returns:
-          f: {T, N, OC}
-          f_lens: {N}
-          pre_state: ({D*L, N, C}, {D*L, N, C})
-          post_state: ({D*L, N, C}, {D*L, N, C})
+          x: {T, N, OC}
+          x_lens: {N}
+          pre_hx: [{N, C} * PRE_L]
+          pre_cx: [{N, C} * PRE_L]
+          post_hx: [{N, C} * POST_L]
+          post_hx: [{N, C} * POST_L]
         """
         if self.run_mode == "quant":
-            f = self.pre_quantizer(f)
-        f, pre_state = self.pre_rnn(f, pre_state)
-        f, f_lens = self.stack_time(f, f_lens)
-        # if self.run_mode == "quant":
-            # f = self.post_quantizer(f)
-        f, post_state = self.post_rnn(f, post_state)
-        return f, f_lens, pre_state, post_state
+            x = self.pre_quantizer(x)
+        x, pre_hx, pre_cx = self.pre_rnn(x, pre_hx, pre_cx)
+        x, x_lens = self.stack_time(x, x_lens)
+        x, post_hx, post_cx = self.post_rnn(x, post_hx, post_cx)
+        return x, x_lens, pre_hx, pre_cx, post_hx, post_cx
 
 
 class Prediction(torch.nn.Module):
@@ -192,27 +194,15 @@ class Joint(torch.nn.Module):
     @torch.jit.ignore
     def prepack_weights(self):
         if self.enable_bf16:
-            self.linear1_trans.weight = Parameter(
-                self.linear1_trans.weight.to(torch.bfloat16), requires_grad=False)
-            self.linear1_trans.bias = Parameter(
-                self.linear1_trans.bias.to(torch.bfloat16), requires_grad=False)
-            self.linear1_pred.weight = Parameter(
-                self.linear1_pred.weight.to(torch.bfloat16), requires_grad=False)
-            self.linear1_pred.bias = Parameter(
-                self.linear1_pred.bias.to(torch.bfloat16), requires_grad=False)
-            self.linear2.weight = Parameter(
-                torch.transpose(self.linear2.weight.to(torch.bfloat16), 0, 1), requires_grad=False)
-            self.linear2.bias = Parameter(
-                self.linear2.bias.to(torch.bfloat16), requires_grad=False)
-        self.linear1_trans.weight = Parameter(
-            P.prepack_linear_weight(self.linear1_trans.weight), requires_grad=False)
-        self.linear1_pred.weight = Parameter(
-            P.prepack_linear_weight(self.linear1_pred.weight), requires_grad=False)
-        #  self.linear2.weight = Parameter(
-             #  P.prepack_linear_weight(self.linear2.weight), requires_grad=False)
-        print('--linear1_trans.weight:', self.linear1_trans.weight.shape, self.linear1_trans.weight.dtype)
-        print('--linear1_pred.weight:', self.linear1_pred.weight.shape, self.linear1_pred.weight.dtype)
-        print('--linear2.weight:', self.linear2.weight.shape, self.linear2.weight.dtype)
+            self.linear1_trans.weight = Parameter(self.linear1_trans.weight.to(torch.bfloat16), requires_grad=False)
+            self.linear1_trans.bias = Parameter(self.linear1_trans.bias.to(torch.bfloat16), requires_grad=False)
+            self.linear1_pred.weight = Parameter(self.linear1_pred.weight.to(torch.bfloat16), requires_grad=False)
+            self.linear1_pred.bias = Parameter(self.linear1_pred.bias.to(torch.bfloat16), requires_grad=False)
+            self.linear2.weight = Parameter(torch.transpose(self.linear2.weight.to(torch.bfloat16), 0, 1), requires_grad=False)
+            # self.linear2.bias = Parameter(self.linear2.bias.to(torch.bfloat16), requires_grad=False)
+        self.linear1_trans.weight = Parameter(P.prepack_linear_weight(self.linear1_trans.weight), requires_grad=False)
+        self.linear1_pred.weight = Parameter(P.prepack_linear_weight(self.linear1_pred.weight), requires_grad=False)
+        # self.linear2.weight = Parameter(P.prepack_linear_weight(self.linear2.weight), requires_grad=False)
 
     def forward(self, f: Tensor, g: Tensor) -> Tensor:
         """
@@ -266,12 +256,13 @@ class StackTime(torch.nn.Module):
         rs = [s[0], s[1] // self.stack_time_factor, s[2] * self.stack_time_factor]
         r = torch.reshape(r, rs)
         y = torch.transpose(r, 0, 1).contiguous()
-        y_lens = torch.ceil(x_lens / self.stack_time_factor).long()
+        y_lens = torch.ceil(x_lens / self.stack_time_factor).to(torch.int32)
 
         for batch_idx in range(y.size(1)):
             if x_lens[batch_idx] % 2 == 1:
                 y[y_lens[batch_idx]-1:, batch_idx, self.trans_hidden_size:] = 0
         return y, y_lens
+
 
 class GreedyDecoderUpdate(torch.nn.Module):
     def __init__(self):
