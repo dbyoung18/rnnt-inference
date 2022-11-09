@@ -274,9 +274,7 @@ void RNNTSUT::IssueQuery(const std::vector<mlperf::QuerySample>& samples) {
   std::cout << "IssueQuery samples size " << samples.size() << std::endl;
   if (batch_sort_) {
     // Parallel sort samples into a queue
-    //mQueue_ = qsl_.Sort(samples);
-    for (auto sample : samples)
-      mQueue_.emplace_back(sample);
+    mQueue_ = qsl_.Sort(samples);
   } else {
     for (auto sample : samples)
       mQueue_.emplace_back(sample);
