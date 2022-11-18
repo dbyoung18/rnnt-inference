@@ -4,6 +4,8 @@ from config import RNNTParam
 from torch import Tensor
 from typing import List
 from utils import *
+import _C as P
+import numpy as np
 
 
 class GreedyDecoder(torch.nn.Module):
@@ -23,8 +25,8 @@ class GreedyDecoder(torch.nn.Module):
           res: {N}
         """
         self.batch_size = x_lens.size(0)
-        self.res = torch.full((self.batch_size, RNNTParam.max_symbols_per_step*x_lens.max().item()), -1)
-        self.res_idx = torch.full((self.batch_size,), -1)
+        self.res = torch.full((self.batch_size, RNNTParam.max_symbols_per_step*x_lens.max().item()), -1, dtype=torch.int32)
+        self.res_idx = torch.full((self.batch_size,), -1, dtype=torch.int32)
         self.step = torch.zeros((self.batch_size, 2))  # debug only
         # TODO
         # python load_jit=true need to init pre_state and post_state
@@ -46,7 +48,7 @@ class GreedyDecoder(torch.nn.Module):
         self.pre_state = None
         self.post_state = None
         # init prediction tensors
-        self.pred_g = torch.tensor([[RNNTParam.SOS]*self.batch_size], dtype=torch.int64)
+        self.pred_g = torch.tensor([[RNNTParam.SOS]*self.batch_size], dtype=torch.int32)
         self.pred_hg = torch.zeros((RNNTParam.pred_num_layers, self.batch_size, RNNTParam.pred_hidden_size))
         self.pred_cg = torch.zeros((RNNTParam.pred_num_layers, self.batch_size, RNNTParam.pred_hidden_size))
         if self.enable_bf16:
@@ -56,7 +58,7 @@ class GreedyDecoder(torch.nn.Module):
         if self.split_len != -1:
             max_len = x_lens.max().item()
             split_lens = torch.tensor(
-                [self.split_len]*self.batch_size, dtype=torch.int64)
+                [self.split_len]*self.batch_size, dtype=torch.int32)
             for split_idx in range(0, max_len, self.split_len):
                 # 0. split x, x_lens
                 xi_lens = torch.min(
@@ -69,14 +71,12 @@ class GreedyDecoder(torch.nn.Module):
 
     def greedy_decode(self, f: Tensor, f_lens: Tensor):
         # init flags
-        self.symbols_added = torch.zeros(self.batch_size, dtype=torch.int64)
-        self.time_idx = torch.zeros(self.batch_size, dtype=torch.int64)
-        self.finish = f_lens.eq(0)
-        self.batch_idx =  torch.range(0, self.batch_size-1, dtype=torch.int64)
-        self.trace = [[0]*f_len for f_len in f_lens]  # debug only
+        self.symbols_added = torch.zeros(self.batch_size, dtype=torch.int32)
+        self.time_idx = torch.zeros(self.batch_size, dtype=torch.int32)
         # 1. do transcription
         f, f_lens, self.pre_state, self.post_state = self.rnnt.transcription(f, f_lens, self.pre_state, self.post_state)
-        self.eos_idx = torch.clamp(f_lens-1, min=0)
+        self.finish = f_lens.eq(0)
+        f_lens = f_lens.to(torch.int32)
         if self.enable_bf16:
             f = f.to(torch.bfloat16)
         fi = f[0]
@@ -85,40 +85,13 @@ class GreedyDecoder(torch.nn.Module):
             # TODO: bf16 prediction + joint
             # 2. do prediction
             g, state = self.rnnt.prediction(self.pred_g, self.pred_state)
-            # TODO: fuse joint + argmax
             # 3. do joint
             y = self.rnnt.joint(fi, g[0])
             symbols = torch.argmax(y, dim=1)
-            # 4. if (no BLANK and no MAX_SYMBOLS_PER_STEP) and no FINISH
-            self.update_g = symbols.ne(RNNTParam.BLANK) & self.symbols_added.ne(RNNTParam.max_symbols_per_step) & ~self.finish
-            if any(self.update_g):
-                self.step[self.update_g, 1] += 1
-                self.res_idx += self.update_g
-                # 4.1. update res
-                self.res[self.update_g, self.res_idx[self.update_g]] = symbols[self.update_g]
-                # 4.2. update symbols_added
-                self.symbols_added += self.update_g
-                # 4.3. update g
-                self.pred_g[0][self.update_g] = symbols[self.update_g]
-                self.pred_state[0][:, self.update_g, :] = state[0][:, self.update_g, :]
-                self.pred_state[1][:, self.update_g, :] = state[1][:, self.update_g, :]
+            finish = P.greedy_decode_update(symbols, self.symbols_added, self.res, self.res_idx, self.time_idx, f_lens, self.pred_g, f, fi, self.pred_state[0], self.pred_state[1], state[0], state[1])
 
-            # 5. if (BLANK or MAX_SYMBOLS_PER_STEP) and no FINISH
-            self.update_f = ~self.update_g & ~self.finish
-            if any(self.update_f):
-                self.step[self.update_f, 0] += 1
-                # 5.1. update time_idx
-                self.time_idx += self.update_f
-                # 5.2. BCE
-                self.finish |= self.time_idx.ge(f_lens)  # TODO: add early response
-                self.time_idx = self.time_idx.min(self.eos_idx)
-                if all(self.finish):
-                    break
-                # 5.3. update f
-                fi = f[self.time_idx, self.batch_idx, :]
-                # 5.4. reset symbols_added
-                self.symbols_added *= ~self.update_f
-            # self._dump_tensors()
+            if finish:
+                break
         return self.res
 
     def _dump_tensors(self, **kwargs):

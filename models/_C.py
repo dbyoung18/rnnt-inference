@@ -41,3 +41,4 @@ tanh_f16 = torch.ops.intel_mlperf.tanh_f16
 lstm_postop = torch.ops.intel_mlperf.lstm_postop
 lstm_layer_int8 = torch.ops.intel_mlperf.lstm_layer_int8
 lstm_int8 = torch.ops.intel_mlperf.lstm_int8
+greedy_decode_update = torch.ops.intel_mlperf.greedy_decode_update
