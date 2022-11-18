@@ -32,17 +32,17 @@ class GreedyDecoder(torch.nn.Module):
         # python load_jit=true need to init pre_state and post_state
         # hx_pre, cx_pre = [], []
         # for i in range(RNNTParam.pre_num_layers):
-        #     hx_pre.append(torch.zeros(x.size(1), RNNTParam.trans_hidden_size,
-        #             dtype=torch.int8))
-        #     cx_pre.append(torch.zeros(x.size(1), RNNTParam.trans_hidden_size,
-        #             dtype=torch.float16))
+            # hx_pre.append(torch.zeros(x.size(1), RNNTParam.trans_hidden_size,
+                    # dtype=torch.int8))
+            # cx_pre.append(torch.zeros(x.size(1), RNNTParam.trans_hidden_size,
+                    # dtype=torch.float16))
         # self.pre_state = (hx_pre, cx_pre)
         # hx_post, cx_post = [], []
         # for i in range(RNNTParam.post_num_layers):
-        #     hx_post.append(torch.zeros(x.size(1), RNNTParam.trans_hidden_size,
-        #             dtype=torch.int8))
-        #     cx_post.append(torch.zeros(x.size(1), RNNTParam.trans_hidden_size,
-        #             dtype=torch.float16))
+            # hx_post.append(torch.zeros(x.size(1), RNNTParam.trans_hidden_size,
+                    # dtype=torch.int8))
+            # cx_post.append(torch.zeros(x.size(1), RNNTParam.trans_hidden_size,
+                    # dtype=torch.float16))
         # self.post_state = (hx_post, cx_post)
         # init transcription tensors
         self.pre_state = None
@@ -88,7 +88,7 @@ class GreedyDecoder(torch.nn.Module):
             # 3. do joint
             y = self.rnnt.joint(fi, g[0])
             symbols = torch.argmax(y, dim=1)
-            finish = P.greedy_decode_update(symbols, self.symbols_added, self.res, self.res_idx, self.time_idx, f_lens, self.pred_g, f, fi, self.pred_state[0], self.pred_state[1], state[0], state[1])
+            finish = self.rnnt.update(symbols, self.symbols_added, self.res, self.res_idx, self.time_idx, f_lens, self.pred_g, f, fi, self.pred_state[0], self.pred_state[1], state[0], state[1])
 
             if finish:
                 break

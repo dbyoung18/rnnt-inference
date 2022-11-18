@@ -16,6 +16,7 @@ class RNNT(torch.nn.Module):
         self.transcription = Transcription(run_mode)
         self.prediction = Prediction(enable_bf16)
         self.joint = Joint(enable_bf16)
+        self.update = GreedyDecoderUpdate()
         if model_path is not None:
             saved_quantizers = False if run_mode == None or run_mode == "f32" or run_mode == "calib" else True
             self._load_model(model_path, run_mode, enable_bf16, load_jit, saved_quantizers)
@@ -26,6 +27,7 @@ class RNNT(torch.nn.Module):
             self.transcription = model.transcription
             self.prediction = model.prediction
             self.joint = model.joint
+            self.update = model.update
         else:
             model = torch.load(model_path, map_location="cpu")
             state_dict = migrate_state_dict(model)
@@ -271,3 +273,9 @@ class StackTime(torch.nn.Module):
                 y[y_lens[batch_idx]-1:, batch_idx, self.trans_hidden_size:] = 0
         return y, y_lens
 
+class GreedyDecoderUpdate(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, symbols: Tensor, symbols_added: Tensor, res: Tensor, res_idx: Tensor, time_idx: Tensor, f_lens: Tensor, pred_g: Tensor, f: Tensor, fi: Tensor, pred_state0: Tensor, pred_state1: Tensor, state0: Tensor, state1: Tensor) -> bool:
+        return P.greedy_decode_update(symbols, symbols_added, res, res_idx, time_idx, f_lens, pred_g, f, fi, pred_state0, pred_state1, state0, state1)

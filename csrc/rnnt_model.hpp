@@ -19,6 +19,7 @@ struct RNNT {
   Module transcription;
   Module prediction;
   Module joint;
+  Module update;
 
   RNNT() {}
 
@@ -27,7 +28,8 @@ struct RNNT {
     auto module_ptr = model.children().begin();
     transcription = *module_ptr++;
     prediction = *module_ptr++;
-    joint = *module_ptr;
+    joint = *module_ptr++;
+    update = *module_ptr;
   }
 };
 
@@ -68,8 +70,8 @@ public:
     auto x = inputs[0].toTensor();
     auto x_lens = inputs[1].toTensor();
     auto batch_size = x_lens.size(0);
-    auto res = torch::full({batch_size, x_lens.max().item().toInt()*3}, SOS, torch::dtype(torch::kInt64));
-    auto res_idx = torch::full({batch_size}, -1, torch::dtype(torch::kInt64));
+    auto res = torch::full({batch_size, x_lens.max().item().toInt()*3}, SOS, torch::dtype(torch::kInt32));
+    auto res_idx = torch::full({batch_size}, -1, torch::dtype(torch::kInt32));
     // init transcription tensors
     std::vector<at::Tensor> pre_hx(pre_num_layers);
     std::vector<at::Tensor> pre_cx(pre_num_layers);
@@ -89,7 +91,7 @@ public:
     }
 
     // init prediction tensors
-    auto pred_g = torch::full({1, batch_size}, SOS, torch::dtype(torch::kLong));
+    auto pred_g = torch::full({1, batch_size}, SOS, torch::dtype(torch::kInt32));
     auto pred_dtype_ = enable_bf16_ ? at::ScalarType::BFloat16 : torch::kFloat32;
     auto pred_hg = torch::zeros({pred_num_layers, batch_size, pred_hidden_size}, torch::dtype(pred_dtype_));
     auto pred_cg = torch::zeros({pred_num_layers, batch_size, pred_hidden_size}, torch::dtype(pred_dtype_));
@@ -118,14 +120,14 @@ public:
       at::Tensor& res_idx) {
     // init flags
     auto batch_size = f_lens.size(0);
-    auto symbols_added = torch::zeros(batch_size, torch::dtype(torch::kLong));
-    auto time_idx = torch::zeros(batch_size, torch::dtype(torch::kLong));
+    auto symbols_added = torch::zeros(batch_size, torch::dtype(torch::kInt32));
+    auto time_idx = torch::zeros(batch_size, torch::dtype(torch::kInt32));
     auto finish = f_lens.eq(0);
-    auto fi_idx = torch::range(0, batch_size-1, torch::dtype(torch::kLong));
+    auto fi_idx = torch::range(0, batch_size-1, torch::dtype(torch::kInt32));
     // 1. do transcription
     auto trans_res = model.transcription({f, f_lens, std::make_tuple(pre_hx, pre_cx), std::make_tuple(post_hx, post_cx)}).toTuple()->elements();
     f = trans_res[0].toTensor();
-    f_lens = trans_res[1].toTensor();
+    f_lens = trans_res[1].toTensor().toType(torch::kInt32);
     pre_hx = trans_res[2].toTuple()->elements()[0].toTensorList().vec();
     pre_cx = trans_res[2].toTuple()->elements()[1].toTensorList().vec();
     post_hx = trans_res[3].toTuple()->elements()[0].toTensorList().vec();
@@ -145,33 +147,8 @@ public:
       auto y = model.joint({fi, g[0]}).toTensor();
       auto symbols = torch::argmax(y, 1);
       // 4. if (no BLANK and no MAX_SYMBOLS_PER_STEP) and no FINISH
-      auto update_g = symbols.ne(BLANK) & symbols_added.ne(max_symbols_per_step) & ~finish;
-      if (torch::any(update_g).item().toBool()) {
-        res_idx += update_g;
-        // 4.1. update res
-        res.index_put_({update_g, res_idx.index({update_g})}, symbols.index({update_g}));
-        // 4.2. update symbols_added
-        symbols_added += update_g;
-        // 4.3. update g
-        pred_g.index_put_({0, update_g}, symbols.index({update_g}));
-        pred_hg.index_put_({Slice(0), update_g, "..."}, hg.index({Slice(0), update_g, "..."}));
-        pred_cg.index_put_({Slice(0), update_g, "..."}, cg.index({Slice(0), update_g, "..."}));
-      }
-      // 5. if (BLANK or MAX_SYMBOLS_PER_STEP) and no FINISH
-      auto update_f = ~update_g & ~finish;
-      if (torch::any(update_f).item().toBool()) {
-        // 5.1. update time_idx
-        time_idx += update_f;
-        // 5.2. BCE
-        finish |= time_idx.ge(f_lens);
-        time_idx = time_idx.min(eos_idx);
-        if (torch::all(finish).item().toBool())
-          break;
-        // 5.3. update f
-        fi = f.index({time_idx, fi_idx, "..."});
-        // 5.4. reset symbols_added
-        symbols_added *= ~update_f;
-      }
+      bool finish = model.update({symbols, symbols_added, res, res_idx, time_idx, f_lens, pred_g, f, fi, pred_hg, pred_cg, hg, cg}).toBool();
+      if (finish) break;
     }
   }
 

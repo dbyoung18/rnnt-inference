@@ -66,6 +66,7 @@ def jit_model(model):
     model.transcription = jit_module(model.transcription, False)
     model.prediction = jit_module(model.prediction)
     model.joint = jit_module(model.joint)
+    model.update = jit_module(model.update)
     model = jit_module(model, False)
     return model
 
