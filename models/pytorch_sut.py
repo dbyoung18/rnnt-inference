@@ -77,7 +77,7 @@ class PytorchSUT:
     def query_samples_complete(self, samples, results, results_idx):
         batch_responses = []
         for i in range(len(results)):
-            res_arr = array.array("q", results[i])
+            res_arr = array.array("i", results[i])
             buf_inf = res_arr.buffer_info()
             response = lg.QuerySampleResponse(
                 samples[i].id,
