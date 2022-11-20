@@ -320,7 +320,7 @@ void RNNTSUT::QuerySamplesComplete(
     //std::cout << samples[i].index << "::" << models::TorchModel::sequence_to_string(results[i], result_lens_int) << std::endl;
     responses[i].id = samples[i].id;
     responses[i].data = reinterpret_cast<uintptr_t>(results[i].data_ptr());
-    responses[i].size = result_lens_int*8;
+    responses[i].size = result_lens_int * 4;
   }
   mlperf::QuerySamplesComplete(responses.data(), responses.size());
 }
