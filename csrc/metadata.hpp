@@ -23,7 +23,8 @@ enum {
   SOS = -1,
   BLANK = 28,
   MAX_SYMBOLS_PER_STEP = 30,
-  MAX_LEN = 500
+  MAX_LEN = 500,
+  HALF_MAX_LEN = 250
 };
 
 // batch samples
@@ -40,9 +41,8 @@ public:
   void init(int32_t batch_size, bool enable_bf16 = true);
   void update(at::Tensor x, at::Tensor x_lens, int32_t split_len = -1);
   void update (TensorVector x, TensorVector x_lens, int32_t split_len);
-  bool next (int32_t split_len, int32_t count=0);
+  bool next ();
   void reset (int32_t batch_size, int32_t split_len);
-  int32_t get_finish_size();
 
   int32_t batch_size_;
   int32_t finish_size_ = 0;
@@ -69,7 +69,7 @@ public:
   // infer index
   at::Tensor finish_idx_;  // row
   at::Tensor split_idx_;  // col
-  int32_t split_idx;
+  int32_t split_idx = 0;
 };
 
 }  // namespace rnnt
