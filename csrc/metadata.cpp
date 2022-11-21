@@ -25,7 +25,7 @@ void State::init (int32_t batch_size, bool enable_bf16) {
   pred_hg_ = torch::zeros({PRED_NUM_LAYERS, batch_size_, PRED_HIDDEN_SIZE}, pred_dtype);
   pred_cg_ = torch::zeros({PRED_NUM_LAYERS, batch_size_, PRED_HIDDEN_SIZE}, pred_dtype);
   // init res tensors
-  res_ = torch::full({batch_size_, int(MAX_LEN / 2 * MAX_SYMBOLS_PER_STEP)}, SOS, torch::kInt32);
+  res_ = torch::full({batch_size_, int(HALF_MAX_LEN * MAX_SYMBOLS_PER_STEP)}, SOS, torch::kInt32);
   res_idx_ = torch::full({batch_size_}, -1, torch::kInt32);
   // init infer index
   finish_idx_ = torch::zeros({batch_size_}, torch::kBool);
@@ -35,7 +35,7 @@ void State::init (int32_t batch_size, bool enable_bf16) {
   F_lens_ = torch::zeros({batch_size_}, torch::kInt64);
 }
 
-// update batching x, x_lens
+// for Offline: batch ahead
 void State::update (at::Tensor f, at::Tensor f_lens, int32_t split_len) {
   // checking actual BS
   if (f_lens.size(0) != batch_size_)
@@ -45,18 +45,18 @@ void State::update (at::Tensor f, at::Tensor f_lens, int32_t split_len) {
     f_ = f;
     f_lens_ = f_lens;
   } else {
-    F_ = f;
     F_lens_ = f_lens;
-    // f_split_ = torch::split(f, split_len);
+    f_split_ = torch::split(f, split_len);
     split_lens_ = at::full({batch_size_}, split_len, torch::kInt32);
   }
 }
 
+// for Server: dynamic batch
 void State::update (TensorVector f, TensorVector f_lens, int32_t split_len) {
   int j = 0;
   for (int32_t batch_idx = 0; batch_idx < batch_size_; ++batch_idx) {
     if (finish_idx_[batch_idx].item().toBool() == false) {
-      auto f_len = f_lens[j].item().toLong();
+      auto f_len = f_lens[j].item().toInt();
       F_.index_put_({Slice(0, f_len), batch_idx}, f[j].index({Slice(0, f_len)}).squeeze());
       F_lens_.index_put_({batch_idx}, f_len);
       ++j;
@@ -68,19 +68,14 @@ void State::update (TensorVector f, TensorVector f_lens, int32_t split_len) {
   f_lens_ = F_lens_;
 }
 
-bool State::next (int32_t split_len, int32_t count) {
-  reset(F_lens_.size(0), split_len);
-  f_lens_ = torch::min(split_lens_, (F_lens_ - split_idx_).clamp(0));
-  for (int32_t batch_idx = 0; batch_idx < batch_size_; ++batch_idx) {
-    auto f_len = f_lens_[batch_idx].item().toInt();
-    auto split_start = split_idx_[batch_idx].item().toInt();
-    f_.index_put_({Slice(0, f_len), batch_idx}, F_.index({Slice(split_start, split_start + f_len), batch_idx}));
+bool State::next () {
+  bool status = (split_idx != f_split_.size());
+  if (status) {
+    f_lens_ = torch::min(split_lens_, (F_lens_ - split_idx).clamp(0));
+    f_ = f_split_[split_idx];
+    split_idx++;
   }
-  // f_ = f_split_[count];
-  // std::cout << count << "::f_.shape:" << f_.sizes() << ", f_len_.shape:" << f_lens_.sizes() << std::endl;
-  finish_idx_ = f_lens_.eq(0);
-  split_idx_ += split_lens_;
-  return (get_finish_size() != batch_size_);
+  return status;
 }
 
 // bool State::next (int32_t split_len, int32_t count) {
@@ -101,11 +96,6 @@ void State::reset (int32_t batch_size, int32_t split_len) {
     // split_lens_ = at::full({batch_size_}, split_len, torch::kInt32);
   if (batch_size != batch_size_)
     init(batch_size);
-}
-
-int32_t State::get_finish_size () {
-  finish_size_ = torch::count_nonzero(finish_idx_).item().toInt();
-  return finish_size_;
 }
 
 }  // namespace rnnt

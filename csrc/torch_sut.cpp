@@ -224,7 +224,7 @@ void RNNTSUT::thInstanceModel(int index) {
       // inference
       // sleep_thread(500);
       if (split_len_ != -1) {
-        while (state.next(split_len_))
+        while (state.next())
           model_.inference_at(which, state, split_len_);
         require_size = state.finish_size_;
       } else {

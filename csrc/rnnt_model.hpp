@@ -62,7 +62,7 @@ public:
 
   void transcription_forward(RNNT model, State& state) {
     auto trans_res = model.transcription(
-        {state.f_, state.f_lens_, state.pre_hx_ , state.pre_cx_ , state.post_hx_ , state.post_cx_ }).toTuple()->elements();
+        {state.f_, state.f_lens_, state.pre_hx_ , state.pre_cx_ , state.post_hx_ , state.post_cx_}).toTuple()->elements();
     state.f_ = trans_res[0].toTensor();
     state.f_lens_ = trans_res[1].toTensor();
     state.pre_hx_  = trans_res[2].toTensorVector();
@@ -81,8 +81,8 @@ public:
     if (split_len != -1) {
       // accumulate transcription
       TensorVector fi_list;
-      fi_list.reserve(250);
-      while(state.next(split_len)) {
+      fi_list.reserve(HALF_MAX_LEN);
+      while(state.next()) {
         transcription_forward(model, state);
         fi_list.emplace_back(state.f_);
       }
