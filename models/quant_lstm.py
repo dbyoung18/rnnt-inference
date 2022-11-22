@@ -157,9 +157,11 @@ class iLSTMLayer(QuantLSTMLayer):
         weights.append(weights_layer)
 
     def forward(self, x: Tensor, hx: Tensor, cx: Tensor, skip_quant_y: bool) -> Tuple[Tensor, Tensor, Tensor]:
-        if not self.first_layer:
-            return P.lstm_layer_int8(x, hx, cx, self.weight_ih, self.weight_hh, self.bias_ih, self.bias_hh,
-                    self.rb_scale, self.in_quant_scale, self.out_quant_scale, skip_quant_y)
+        if self.first_layer:
+            x = F.pad(x, (0, 64 - x.shape[-1] % 64), "constant", 0.0)
+        return P.lstm_layer_int8(x, hx, cx, self.weight_ih, self.weight_hh, self.bias_ih, self.bias_hh,
+                self.rb_scale, self.in_quant_scale, self.out_quant_scale, skip_quant_y)
+
         gates_list = []
         for i in range(x.shape[0]):
             gates = P.linear(x[i], self.weight_ih, self.bias_ih, self.rb_scale, None)

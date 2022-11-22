@@ -141,12 +141,15 @@ class TensorQuantizer(nn.Module):
         s += f" min_bound=${self._min_bound}"
         return s
 
-def transpose_tile_weight(weight):
+def transpose_tile_weight(weight, padding: bool = False):
     row = weight.shape[0]
     col = weight.shape[1]
 
-    col_step = int(col / 64)
-    col_tile = int(row / 64)
+    col_step = (col + 63) // 64
+    col_tile = (row + 63) // 64
+    if padding:
+        pad_size = (0, col_step * 64 - col, 0, col_tile * 64 - row)
+        weight = torch.nn.functional.pad(weight, pad_size, "constant", 0.0)
 
     weight = weight.view(col_tile * 16, 4, col)
     weight = weight.transpose(1, 2).reshape(col_tile * 16, col * 4)
@@ -164,7 +167,8 @@ class WeightQuantizer(TensorQuantizer):
         outputs = round_and_clamp(inputs * self.scale, self._min_bound, self._max_bound)
         outputs = outputs.type(torch.int8)
         if first_layer:
-            prepacked_outputs = P.prepack_linear_weight(outputs)
+            # prepacked_outputs = P.prepack_linear_weight(outputs)
+            prepacked_outputs = transpose_tile_weight(outputs.transpose(1, 0), True)
         else:
             prepacked_outputs = transpose_tile_weight(outputs.transpose(1, 0))
         return prepacked_outputs
