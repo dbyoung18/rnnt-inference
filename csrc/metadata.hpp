@@ -61,8 +61,8 @@ public:
   TensorVector post_cx_;
   // prediction
   at::Tensor pred_g_;
-  at::Tensor pred_hg_;
-  at::Tensor pred_cg_;
+  TensorVector pred_hg_;
+  TensorVector pred_cg_;
   // results
   at::Tensor res_;
   at::Tensor res_idx_;
