@@ -38,11 +38,12 @@ class GreedyDecoder(torch.nn.Module):
         self.post_hx = [torch.zeros((self.batch_size, RNNTParam.trans_hidden_size), dtype=trans_hx_dtype) for layer in range(RNNTParam.post_num_layers)]
         self.post_cx = [torch.zeros((self.batch_size, RNNTParam.trans_hidden_size), dtype=trans_cx_dtype) for layer in range(RNNTParam.post_num_layers)]
         # init prediction tensors
-        self.pred_g = torch.tensor([[RNNTParam.SOS]*self.batch_size], dtype=res_dtype)
+        self.pre_g = torch.tensor([[RNNTParam.SOS]*self.batch_size], dtype=res_dtype)
         pred_dtype = torch.bfloat16 if self.enable_bf16 else torch.float32
-        self.pred_hg = torch.zeros((RNNTParam.pred_num_layers, self.batch_size, RNNTParam.pred_hidden_size), dtype=pred_dtype)
-        self.pred_cg = torch.zeros((RNNTParam.pred_num_layers, self.batch_size, RNNTParam.pred_hidden_size), dtype=pred_dtype)
-        self.pred_state = [self.pred_hg, self.pred_cg]
+        self.pre_hg = [
+            torch.zeros((self.batch_size, RNNTParam.pred_hidden_size), dtype=pred_dtype) for layer in range(RNNTParam.pred_num_layers)]
+        self.pre_cg = [
+            torch.zeros((self.batch_size, RNNTParam.pred_hidden_size), dtype=pred_dtype) for layer in range(RNNTParam.pred_num_layers)]
 
         if self.split_len != -1:
             max_len = x_lens.max().item()
@@ -78,10 +79,8 @@ class GreedyDecoder(torch.nn.Module):
         fi = f[0]
 
         while True:
-            # TODO: bf16 prediction + joint
             # 2. do prediction
-            g, state = self.rnnt.prediction(self.pred_g, self.pred_state)
-            # TODO: fuse joint + argmax
+            g, hg, cg = self.rnnt.prediction(self.pre_g, self.pre_hg, self.pre_cg)
             # 3. do joint
             y = self.rnnt.joint(fi, g[0])
             symbols = torch.argmax(y, dim=1)
@@ -95,9 +94,11 @@ class GreedyDecoder(torch.nn.Module):
                 # 4.2. update symbols_added
                 self.symbols_added += self.update_g
                 # 4.3. update g
-                self.pred_g[0][self.update_g] = symbols[self.update_g]
-                self.pred_state[0][:, self.update_g, :] = state[0][:, self.update_g, :]
-                self.pred_state[1][:, self.update_g, :] = state[1][:, self.update_g, :]
+                self.pre_g[0][self.update_g] = symbols[self.update_g]
+                self.pre_hg[0][self.update_g, :] = hg[0][self.update_g, :]
+                self.pre_hg[1][self.update_g, :] = hg[1][self.update_g, :]
+                self.pre_cg[0][self.update_g, :] = cg[0][self.update_g, :]
+                self.pre_cg[1][self.update_g, :] = cg[1][self.update_g, :]
 
             # 5. if (BLANK or MAX_SYMBOLS_PER_STEP) and no FINISH
             self.update_f = ~self.update_g & ~self.finish
@@ -129,15 +130,16 @@ class GreedyDecoder(torch.nn.Module):
         fi = f[0]
 
         while True:
-            # TODO: bf16 prediction + joint
             # 2. do prediction
-            g, state = self.rnnt.prediction(self.pred_g, self.pred_state)
+            g, hg, cg = self.rnnt.prediction(self.pre_g, self.pre_hg, self.pre_cg)
             # 3. do joint
             y = self.rnnt.joint(fi, g[0])
             symbols = torch.argmax(y, dim=1)
-            # 4. update state & flags
-            finish = self.rnnt.update(symbols, self.symbols_added, self.res, self.res_idx, self.time_idx, f_lens, self.pred_g, f, fi, self.pred_state[0], self.pred_state[1], state[0], state[1])
-
+            # 4. update state
+            finish = self.rnnt.update(
+                    symbols, self.symbols_added, self.res, self.res_idx,
+                    f, f_lens, self.time_idx, fi,
+                    self.pre_g, self.pre_hg, self.pre_cg, hg, cg)
             if finish:
                 break
         return self.res
@@ -156,9 +158,9 @@ class GreedyDecoder(torch.nn.Module):
         s += f"finish: {self.finish}\n"
         s += f"update_g: {self.update_g}\n"
         s += f"update_f: {self.update_f}\n"
-        s += f"pred_g: {self.pred_g}\n"
-        s += f"pred_hg.sum: {self.pred_state[0].contiguous().sum()}\n"
-        s += f"pred_cg.sum: {self.pred_state[1].contiguous().sum()}\n"
+        s += f"pre_g: {self.pre_g}\n"
+        s += f"pre_hg.sum: {self.pred_state[0].contiguous().sum()}\n"
+        s += f"pre_cg.sum: {self.pred_state[1].contiguous().sum()}\n"
         if kwargs.get('fi') != None:
             s += f"fi.sum: {kwargs.get('fi').contiguous().sum()}\n"
         s += f"pre_hx.sum: {self.pre_state[0].contiguous().sum()}\n"

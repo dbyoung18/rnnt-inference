@@ -95,16 +95,18 @@ public:
 
     while (true) {
       // 2. do prediction
-      auto pred_res = model.prediction({state.pred_g_, std::make_tuple(state.pred_hg_, state.pred_cg_)}).toTuple()->elements();
+      auto pred_res = model.prediction({state.pred_g_, state.pred_hg_, state.pred_cg_}).toTuple()->elements();
       auto g = pred_res[0].toTensor();
-      auto hg = pred_res[1].toTuple()->elements()[0].toTensor();
-      auto cg = pred_res[1].toTuple()->elements()[1].toTensor();
+      auto hg = pred_res[1].toTensorVector();
+      auto cg = pred_res[2].toTensorVector();
       // 3. do joint
       auto y = model.joint({fi, g[0]}).toTensor();
       auto symbols = torch::argmax(y, 1);
       // 4. update state & flags
-      bool finish = model.update({symbols, symbols_added, state.res_, state.res_idx_, time_idx,
-          state.f_lens_, state.pred_g_, state.f_, fi, state.pred_hg_, state.pred_cg_, hg, cg}).toBool();
+      bool finish = model.update({
+          symbols, symbols_added, state.res_, state.res_idx_,
+          state.f_, state.f_lens_, time_idx, fi,
+          state.pred_g_, state.pred_hg_, state.pred_cg_, hg, cg}).toBool();
       if (finish) break;
     }
   }

@@ -22,8 +22,10 @@ void State::init (int32_t batch_size, bool enable_bf16) {
   // init prediction tensors
   pred_g_ = torch::full({1, batch_size_}, SOS, torch::kInt32);
   auto pred_dtype = enable_bf16_ ? at::ScalarType::BFloat16 : torch::kFloat32;
-  pred_hg_ = torch::zeros({PRED_NUM_LAYERS, batch_size_, PRED_HIDDEN_SIZE}, pred_dtype);
-  pred_cg_ = torch::zeros({PRED_NUM_LAYERS, batch_size_, PRED_HIDDEN_SIZE}, pred_dtype);
+  for (int64_t layer = 0; layer < PRED_NUM_LAYERS; ++layer) {
+    pred_hg_.emplace_back(torch::zeros({batch_size_, PRED_HIDDEN_SIZE}, pred_dtype));
+    pred_cg_.emplace_back(torch::zeros({batch_size_, PRED_HIDDEN_SIZE}, pred_dtype));
+  }
   // init res tensors
   res_ = torch::full({batch_size_, int(HALF_MAX_LEN * MAX_SYMBOLS_PER_STEP)}, SOS, torch::kInt32);
   res_idx_ = torch::full({batch_size_}, -1, torch::kInt32);

@@ -150,27 +150,27 @@ class Prediction(torch.nn.Module):
             # delattr(self.pred_rnn, self.pred_rnn._all_weights[layer][2])
             # delattr(self.pred_rnn, self.pred_rnn._all_weights[layer][3])
 
-    def forward(self, x: Tensor,
-            state: Tuple[Tensor, Tensor]) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
+    def forward(self, pre_g: Tensor,
+            pre_hg: List[Tensor], pre_cg: List[Tensor]) -> Tuple[Tensor, List[Tensor], List[Tensor]]:
         """
         Args:
-          x: {U, N}
-          state: ({D*L, N, C}, {D*L, N, C})
+          pre_g: {U, N}
+          pre_hg, pre_cg: [{N, C} * L]
 
         Returns:
           g: {U, N, C}
-          state: ({D*L, N, C}, {D*L, N, C})
+          hg, cg: [{N, C} * L]
         """
         # hack SOS, since there is no SOS in embedding table :(
         # TODO: fuse maskfill + embedding + maskfill_ + copy
-        sos_mask = x.eq(self.sos)
-        g = x.masked_fill(sos_mask, 0)
+        sos_mask = pre_g.eq(self.sos)
+        g = pre_g.masked_fill(sos_mask, 0)
         g = self.embed(g)
         g = g.masked_fill_(sos_mask.unsqueeze(2), 0.0)
         if self.enable_bf16:
             g = g.to(torch.bfloat16)
-        g, hg, cg = P.lstm(g, state[0], state[1], self.pred_rnn.weights, self.pred_rnn.hidden_size)
-        return g, (hg, cg)
+        g, hg, cg = P.lstm(g, pre_hg, pre_cg, self.pred_rnn.weights)
+        return g, hg, cg
 
 
 class Joint(torch.nn.Module):
@@ -268,5 +268,11 @@ class GreedyDecoderUpdate(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
-    def forward(self, symbols: Tensor, symbols_added: Tensor, res: Tensor, res_idx: Tensor, time_idx: Tensor, f_lens: Tensor, pred_g: Tensor, f: Tensor, fi: Tensor, pred_state0: Tensor, pred_state1: Tensor, state0: Tensor, state1: Tensor) -> bool:
-        return P.greedy_decode_update(symbols, symbols_added, res, res_idx, time_idx, f_lens, pred_g, f, fi, pred_state0, pred_state1, state0, state1)
+    def forward(self,
+            symbols: Tensor, symbols_added: Tensor, res: Tensor, res_idx: Tensor,
+            f: Tensor, f_lens: Tensor, time_idx: Tensor, fi: Tensor,
+            pre_g:Tensor, pre_hg: List[Tensor], pre_cg: List[Tensor], hg: List[Tensor], cg: List[Tensor]) -> bool:
+        return P.greedy_decode_update(
+            symbols, symbols_added, res, res_idx,
+            f, f_lens, time_idx, fi,
+            pre_g, pre_hg, pre_cg, hg, cg)
