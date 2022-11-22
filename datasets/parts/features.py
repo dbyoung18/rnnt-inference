@@ -157,7 +157,7 @@ class FilterbankFeatures(nn.Module):
         x = torch.stft(
             x, n_fft=self.n_fft, hop_length=self.hop_length,
             win_length=self.win_length,
-            center=True, window=self.window,
+            center=False, window=self.window,
 		    return_complex=True)
 
         # get power spectrum

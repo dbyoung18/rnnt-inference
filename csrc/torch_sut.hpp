@@ -72,11 +72,6 @@ public:
 
   static void QuerySamplesComplete(
       const std::vector<mlperf::QuerySample>& samples,
-      const std::vector<std::vector<int64_t>>& results
-  );
-
-  static void QuerySamplesComplete(
-      const std::vector<mlperf::QuerySample>& samples,
       const at::Tensor& results
   );
 
@@ -85,6 +80,12 @@ public:
       const at::Tensor& results,
       const at::Tensor& result_lens
   );
+
+  void QuerySamplesComplete(
+      const std::vector<mlperf::QuerySample>& samples,
+      const at::Tensor& results,
+      const at::Tensor& result_lens,
+      const at::Tensor& finish_idx);
 
   mlperf::QuerySampleLibrary* GetQSL() {
     return &qsl_;

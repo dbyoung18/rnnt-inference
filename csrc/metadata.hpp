@@ -42,10 +42,11 @@ public:
   void update(at::Tensor x, at::Tensor x_lens, int32_t split_len = -1);
   void update (TensorVector x, TensorVector x_lens, int32_t split_len);
   bool next ();
+  void reset ();
   void reset (int32_t batch_size, int32_t split_len);
 
   int32_t batch_size_;
-  int32_t finish_size_ = 0;
+  int32_t finish_size_;
   at::Tensor split_lens_;
   bool enable_bf16_ = true;
   // transcription
@@ -60,9 +61,9 @@ public:
   TensorVector post_hx_;
   TensorVector post_cx_;
   // prediction
-  at::Tensor pred_g_;
-  TensorVector pred_hg_;
-  TensorVector pred_cg_;
+  at::Tensor pre_g_;
+  TensorVector pre_hg_;
+  TensorVector pre_cg_;
   // results
   at::Tensor res_;
   at::Tensor res_idx_;

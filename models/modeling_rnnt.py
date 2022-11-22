@@ -87,7 +87,7 @@ class Transcription(torch.nn.Module):
                 RNNTParam.post_num_layers,
                 skip_quant_y=True
             )
-        self.stack_time = StackTime(RNNTParam.stack_time_factor)
+        self.stack_time = StackTime(RNNTParam.stack_time_factor, run_mode)
         self.run_mode = run_mode
 
     def forward(self,
@@ -141,6 +141,8 @@ class Prediction(torch.nn.Module):
                 w_ih, w_hh = w_ih.to(torch.bfloat16), w_hh.to(torch.bfloat16)
             prepacked_w_ih, prepacked_w_hh = P.prepack_lstm_weights(w_ih, w_hh)
             self.pred_rnn.weights.append([prepacked_w_ih, prepacked_w_hh, b_ih, b_hh])
+        if self.enable_bf16:
+            self.embed.weight = Parameter(self.embed.weight.to(torch.bfloat16), requires_grad=False)
         # self.pred_rnn.weights = Parameter(self.pred_rnn.weights)
         # for layer in range(self.pred_rnn.num_layers):
             # delattr(self.pred_rnn, self.pred_rnn._all_weights[layer][0])
@@ -165,8 +167,6 @@ class Prediction(torch.nn.Module):
         g = pre_g.masked_fill(sos_mask, 0)
         g = self.embed(g)
         g = g.masked_fill_(sos_mask.unsqueeze(2), 0.0)
-        if self.enable_bf16:
-            g = g.to(torch.bfloat16)
         g, hg, cg = P.lstm(g, pre_hg, pre_cg, self.pred_rnn.weights)
         return g, hg, cg
 
@@ -229,12 +229,11 @@ class Joint(torch.nn.Module):
 
 
 class StackTime(torch.nn.Module):
-    def __init__(self, stack_time_factor):
+    def __init__(self, factor, run_mode="f32"):
         super().__init__()
-        self.stack_time_factor = stack_time_factor
-        self.trans_hidden_size = RNNTParam.trans_hidden_size
+        self.factor = factor
+        self.run_mode = run_mode
 
-    # TODO: opt reorder f: [T, N, TRANS_OC] => [T/2, N, TRANS_OC*2]
     def forward(self, x: Tensor, x_lens: Tensor) -> List[Tensor]:
         """
         Args:
@@ -242,24 +241,31 @@ class StackTime(torch.nn.Module):
           x_lens: {N}
 
         Returns:
-          x: {T/2, N, C*2}
+          x: {⌈T/factor⌉, N, C*factor}
           x_lens: {N}
         """
-        r = torch.transpose(x, 0, 1)
-        s = r.shape
-        zeros = torch.zeros(
-            s[0], (-s[1]) % self.stack_time_factor, s[2], dtype=r.dtype, device=r.device)
-        r = torch.cat([r, zeros], 1)
-        s = r.shape
-        rs = [s[0], s[1] // self.stack_time_factor, s[2] * self.stack_time_factor]
-        r = torch.reshape(r, rs)
-        y = torch.transpose(r, 0, 1).contiguous()
-        y_lens = torch.ceil(x_lens / self.stack_time_factor).to(torch.int32)
+        if self.run_mode == "quant":
+            x, x_lens = self.forward_quant(x, x_lens)
+        else:
+            x, x_lens = self.forward_f32(x, x_lens)
+        return x, x_lens
 
-        for batch_idx in range(y.size(1)):
-            if x_lens[batch_idx] % 2 == 1:
-                y[y_lens[batch_idx]-1:, batch_idx, self.trans_hidden_size:] = 0
-        return y, y_lens
+    def forward_f32(self, x: Tensor, x_lens: Tensor) -> List[Tensor]:
+        x_lens = x_lens.to(torch.int64)
+        for batch_idx in range(x.size(1)):
+            x[x_lens[batch_idx]:, batch_idx, :] = 0
+        T, N, C = x.shape
+        x = torch.transpose(x, 0, 1)
+        zeros = torch.zeros(N, T % self.factor, C, dtype=x.dtype, device=x.device)
+        x = torch.cat([x, zeros], 1)
+        x = torch.reshape(x, (N, x.shape[1] // self.factor, C * self.factor))
+        x = torch.transpose(x, 0, 1).contiguous()
+        x_lens = torch.ceil(x_lens / self.factor).to(torch.int32)
+        return x, x_lens
+
+    def forward_quant(self, x: Tensor, x_lens: Tensor) -> List[Tensor]:
+        x, x_lens = P.stack_time(x, x_lens, self.factor)
+        return x, x_lens
 
 
 class GreedyDecoderUpdate(torch.nn.Module):

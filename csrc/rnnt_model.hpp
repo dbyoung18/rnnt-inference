@@ -52,17 +52,15 @@ public:
     return model;
   }
 
-  void inference (State& state, int32_t split_len) {
-    return greedy_decode(model_, state, state.finish_idx_, split_len);
+  void inference_at (int socket, State& state) {
+    transcription_encode(socket, state);
+    greedy_decode(socket, state);
+    return;
   }
 
-  void inference_at (int socket, State& state, int32_t split_len) {
-    return greedy_decode(socket_model_[socket], state, state.finish_idx_, split_len);
-  }
-
-  void transcription_forward(RNNT model, State& state) {
-    auto trans_res = model.transcription(
-        {state.f_, state.f_lens_, state.pre_hx_ , state.pre_cx_ , state.post_hx_ , state.post_cx_}).toTuple()->elements();
+  void transcription_encode(int socket, State& state) {
+    auto trans_res = socket_model_[socket].transcription(
+        {state.f_, state.f_lens_, state.pre_hx_, state.pre_cx_, state.post_hx_, state.post_cx_}).toTuple()->elements();
     state.f_ = trans_res[0].toTensor();
     state.f_lens_ = trans_res[1].toTensor();
     state.pre_hx_  = trans_res[2].toTensorVector();
@@ -71,29 +69,16 @@ public:
     state.post_cx_  = trans_res[5].toTensorVector();
   }
 
-  void greedy_decode (RNNT model, State& state, at::Tensor finish_idx, int32_t split_len) {
+  void greedy_decode (int socket, State& state) {
+    auto model = socket_model_[socket];
     // init flags
     auto symbols_added = torch::zeros(state.batch_size_, torch::dtype(torch::kInt32));
     auto time_idx = torch::zeros(state.batch_size_, torch::dtype(torch::kInt32));
-    // 1. do transcription
-    if (split_len != -1) {
-      // accumulate transcription
-      TensorVector fi_list;
-      fi_list.reserve(HALF_MAX_LEN);
-      while(state.next()) {
-        transcription_forward(model, state);
-        fi_list.emplace_back(state.f_);
-      }
-      state.f_ = torch::cat(fi_list, 0);
-      state.f_lens_ = torch::ceil(state.F_lens_ / 2).to(torch::kInt32);
-    } else {
-      transcription_forward(model, state);
-    }
     auto fi = state.f_[0];
 
     while (true) {
       // 2. do prediction
-      auto pred_res = model.prediction({state.pred_g_, state.pred_hg_, state.pred_cg_}).toTuple()->elements();
+      auto pred_res = model.prediction({state.pre_g_, state.pre_hg_, state.pre_cg_}).toTuple()->elements();
       auto g = pred_res[0].toTensor();
       auto hg = pred_res[1].toTensorVector();
       auto cg = pred_res[2].toTensorVector();
@@ -104,7 +89,7 @@ public:
       bool finish = model.update({
           symbols, symbols_added, state.res_, state.res_idx_,
           state.f_, state.f_lens_, time_idx, fi,
-          state.pred_g_, state.pred_hg_, state.pred_cg_, hg, cg}).toBool();
+          state.pre_g_, state.pre_hg_, state.pre_cg_, hg, cg}).toBool();
       if (finish) break;
     }
   }
