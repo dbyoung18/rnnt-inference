@@ -121,7 +121,7 @@ class FilterbankFeatures(nn.Module):
         highfreq = highfreq or sample_rate / 2
         window_fn = torch_windows.get(window, None)
         window_tensor = window_fn(self.win_length,
-                                  periodic=False) if window_fn else None
+                                  periodic=False).float() if window_fn else None
         filterbanks = torch.tensor(
             librosa.filters.mel(sample_rate, self.n_fft, n_mels=nfilt, fmin=lowfreq,
                                 fmax=highfreq), dtype=torch.float).unsqueeze(0)
@@ -137,15 +137,13 @@ class FilterbankFeatures(nn.Module):
         self.max_length = max_length + max_pad
 
     def get_seq_len(self, seq_len):
-        seq_len = torch.ceil(seq_len.float() / self.hop_length).to(dtype=torch.long)
+        seq_len = torch.ceil(seq_len / self.hop_length).to(dtype=torch.int32)
         if self.frame_splicing > 1:
-            seq_len = torch.ceil(seq_len.float() / self.frame_splicing).to(dtype=torch.long)
+            seq_len = torch.ceil(seq_len / self.frame_splicing).to(dtype=torch.int32)
         return seq_len
 
     @torch.no_grad()
     def forward(self, x: torch.Tensor, x_lens: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        dtype = x.dtype
-
         x_lens = self.get_seq_len(x_lens)
 
         # dither
@@ -159,7 +157,7 @@ class FilterbankFeatures(nn.Module):
         x = torch.stft(
             x, n_fft=self.n_fft, hop_length=self.hop_length,
             win_length=self.win_length,
-            center=True, window=self.window.to(dtype=torch.float),
+            center=True, window=self.window,
 		    return_complex=True)
 
         # get power spectrum
@@ -168,7 +166,7 @@ class FilterbankFeatures(nn.Module):
         if self.dither > 0 and self.use_deterministic_dithering:
             x = x + self.dither ** 2
         # dot with filterbank energies
-        x = torch.matmul(self.fb.to(x.dtype), x)
+        x = torch.matmul(self.fb, x)
 
         # log features if required
         if self.log:
@@ -180,7 +178,7 @@ class FilterbankFeatures(nn.Module):
         # normalize if required
         x = torch.ops.intel_mlperf.i_layernorm_unpad(x, torch.ones_like(x), torch.zeros_like(x), x_lens, 1e-12, unbiased=1)
 
-        return x.to(dtype), x_lens
+        return x, x_lens
 
     @classmethod
     def from_config(cls, cfg, log=False):
