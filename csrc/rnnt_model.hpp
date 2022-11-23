@@ -69,8 +69,6 @@ public:
     state.pre_cx_  = trans_res[3].toTensorVector();
     state.post_hx_  = trans_res[4].toTensorVector();
     state.post_cx_  = trans_res[5].toTensorVector();
-    if (enable_bf16_)
-      state.f_ = state.f_.to(at::ScalarType::BFloat16);
   }
 
   void greedy_decode (RNNT model, State& state, at::Tensor finish_idx, int32_t split_len) {

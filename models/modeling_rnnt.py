@@ -111,8 +111,6 @@ class Transcription(torch.nn.Module):
           post_hx: [{N, C} * POST_L]
           post_hx: [{N, C} * POST_L]
         """
-        if self.run_mode == "quant":
-            x = self.pre_quantizer(x)
         x, pre_hx, pre_cx = self.pre_rnn(x, pre_hx, pre_cx)
         x, x_lens = self.stack_time(x, x_lens)
         x, post_hx, post_cx = self.post_rnn(x, post_hx, post_cx)
