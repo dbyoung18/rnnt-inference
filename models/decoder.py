@@ -125,8 +125,6 @@ class GreedyDecoder(torch.nn.Module):
         # 1. do transcription
         f, f_lens, self.pre_hx, self.pre_cx, self.post_hx, self.post_cx = self.rnnt.transcription(
                 f, f_lens, self.pre_hx, self.pre_cx, self.post_hx, self.post_cx)
-        if self.enable_bf16:
-            f = f.to(torch.bfloat16)
         fi = f[0]
 
         while True:
