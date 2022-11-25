@@ -147,8 +147,8 @@ class iLSTMLayer(QuantLSTMLayer):
         self.weight_ih = Parameter(self.weight_quantizer._quant_forward(self.weight_ih, self.first_layer), requires_grad=False)
         self.weight_hh = Parameter(self.weight_quantizer._quant_forward(self.weight_hh, self.first_layer), requires_grad=False)
         b_scale = self.input_quantizer.scale * self.weight_quantizer.scale
-        self.bias_ih = Parameter(self.bias_ih * b_scale, requires_grad=False)
-        self.bias_hh = Parameter(self.bias_hh * b_scale, requires_grad=False)
+        # self.bias_ih = Parameter(self.bias_ih * b_scale, requires_grad=False)
+        self.bias_hh = Parameter((self.bias_hh + self.bias_ih) * b_scale, requires_grad=False)
         self.rb_scale = 1 / b_scale.item()
         self.in_quant_scale = self.input_quantizer.scale.item()
         self.out_quant_scale = self.output_quantizer.scale.item()
