@@ -49,7 +49,7 @@ void State::update (at::Tensor f, at::Tensor f_lens, int32_t split_len) {
     f_lens_ = f_lens;
   } else {
     F_lens_ = f_lens;
-    f = at::pad(f, {0, 0, 0, 0, 0, MAX_LEN-f.size(0)}, "constant", 0);
+    // f = at::pad(f, {0, 0, 0, 0, 0, MAX_LEN-f.size(0)}, "constant", 0);
     f_split_ = torch::split(f, split_len);
     split_lens_ = at::full({batch_size_}, split_len, torch::kInt32);
   }
