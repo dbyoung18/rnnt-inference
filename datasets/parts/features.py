@@ -43,7 +43,7 @@ class WaveformFeaturizer(object):
         return cls(input_config)
 
 
-constant = 1e-5
+CONSTANT = 1e-5
 
 
 def normalize_batch(x, seq_len, normalize_type):
@@ -56,7 +56,7 @@ def normalize_batch(x, seq_len, normalize_type):
             x_mean[i, :] = x[i, :, :seq_len[i]].mean(dim=1)
             x_std[i, :] = x[i, :, :seq_len[i]].std(dim=1)
         # make sure x_std is not zero
-        x_std += constant
+        x_std += CONSTANT
         return (x - x_mean.unsqueeze(2)) / x_std.unsqueeze(2)
     elif normalize_type == "all_features":
         x_mean = torch.zeros(seq_len.shape, dtype=x.dtype, device=x.device)
@@ -65,7 +65,7 @@ def normalize_batch(x, seq_len, normalize_type):
             x_mean[i] = x[i, :, :seq_len[i].item()].mean()
             x_std[i] = x[i, :, :seq_len[i].item()].std()
         # make sure x_std is not zero
-        x_std += constant
+        x_std += CONSTANT
         return (x - x_mean.view(-1, 1, 1)) / x_std.view(-1, 1, 1)
     else:
         return x
@@ -90,10 +90,11 @@ class FilterbankFeatures(nn.Module):
     def __init__(self, sample_rate=8000, window_size=0.02, window_stride=0.01,
                  window="hamming", normalize="per_feature", n_fft=None,
                  preemph=0.97,
-                 nfilt=64, lowfreq=0, highfreq=None, log=True, dither=constant,
+                 nfilt=64, lowfreq=0, highfreq=None, log=True, dither=CONSTANT,
                  pad_to=8,
                  max_duration=16.7,
-                 frame_splicing=1):
+                 frame_splicing=1,
+                 pad_output=False):
         super(FilterbankFeatures, self).__init__()
 
         torch_windows = {
@@ -135,6 +136,9 @@ class FilterbankFeatures(nn.Module):
         )
         max_pad = 16 - (max_length % 16)
         self.max_length = max_length + max_pad
+        OUT_FEAT = 256 if pad_output else 240
+        OUT_LEN = 500
+        self.output_shape = torch.zeros((128, OUT_FEAT, OUT_LEN))
 
     def get_seq_len(self, seq_len):
         seq_len = torch.ceil(seq_len / self.hop_length).to(dtype=torch.int32)
@@ -176,7 +180,8 @@ class FilterbankFeatures(nn.Module):
         x = torch.ops.intel_mlperf.frame_splicing(x, self.frame_splicing)
 
         # normalize if required
-        x = torch.ops.intel_mlperf.i_layernorm_unpad(x, torch.ones_like(x), torch.zeros_like(x), x_lens, 1e-12, unbiased=1)
+        x = torch.ops.intel_mlperf.i_layernorm_pad(
+            x, torch.ones_like(x), torch.zeros_like(x), x_lens, 1e-12, unbiased=1, output_shape=self.output_shape)
 
         return x, x_lens
 
@@ -188,7 +193,7 @@ class FilterbankFeatures(nn.Module):
                    normalize=cfg['normalize'],
                    max_duration=cfg.get('max_duration', 16.7),
                    dither=cfg['dither'], pad_to=cfg.get("pad_to", 0),
-                   frame_splicing=cfg.get("frame_splicing", 1), log=log)
+                   frame_splicing=cfg.get('frame_splicing', 1), log=log, pad_output=cfg.get('pad_output'))
 
 
 class FeatureFactory(object):

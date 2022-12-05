@@ -24,7 +24,7 @@ class PytorchSUT:
             else:
                 config = toml.load(args.toml_path)
                 featurizer_config = config["input_eval"]
-                self.preprocessor = AudioPreprocessing(**featurizer_config).eval()
+                self.preprocessor = AudioPreprocessing(run_mode, **featurizer_config).eval()
         else:
             self.preprocessor = None
         self.batch_size = batch_size
