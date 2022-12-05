@@ -18,9 +18,10 @@ int main(int argc, char **argv) {
     "rnnt_inference", "MLPerf Benchmark, RNN-T Inference");
   // opts.allow_unrecognised_options();
   opts.add_options(
-      "", {{"m,model_file", "Torch Model File", cxxopts::value<std::string>()},
+      "", {{"s,sample_file", "LibriSpeech Sample File",
+            cxxopts::value<std::string>()},
 
-           {"s,sample_file", "LibriSpeech Sample File",
+           {"m,model_file", "Torch Model File",
             cxxopts::value<std::string>()},
 
            {"preprocessor_file", "Audio Preprocessor File",
@@ -43,9 +44,6 @@ int main(int argc, char **argv) {
 
            {"split_len", "Sequence split len",
             cxxopts::value<int>()->default_value("-1")},
-
-           {"enable_bf16", "Whether enable bf16 for prediction & joint",
-            cxxopts::value<bool>()->default_value("false")},
 
            {"k,test_scenario", "Test scenario [Offline, Server]",
             cxxopts::value<std::string>()->default_value("Offline")},
@@ -80,8 +78,8 @@ int main(int argc, char **argv) {
 
   auto parsed_opts = opts.parse(argc, argv);
 
-  auto model_file = parsed_opts["model_file"].as<std::string>();
   auto sample_file = parsed_opts["sample_file"].as<std::string>();
+  auto model_file = parsed_opts["model_file"].as<std::string>();
   auto preprocessor_file = parsed_opts["preprocessor_file"].as<std::string>();
   auto pre_parallel = parsed_opts["pre_parallel"].as<int>();
   auto inter_parallel = parsed_opts["inter_parallel"].as<int>();
@@ -89,7 +87,6 @@ int main(int argc, char **argv) {
   auto pre_batch_size = parsed_opts["pre_batch_size"].as<int>();
   auto batch_size = parsed_opts["batch_size"].as<int>();
   auto split_len = parsed_opts["split_len"].as<int>();
-  auto enable_bf16 = parsed_opts["enable_bf16"].as<bool>();
   auto test_scenario = parsed_opts["test_scenario"].as<std::string>();
   auto preprocessor_flag = parsed_opts["preprocessor"].as<bool>();
   auto profiler_flag = parsed_opts["profiler"].as<bool>();
@@ -109,7 +106,7 @@ int main(int argc, char **argv) {
     sample_file, model_file, preprocessor_file,
     pre_parallel, inter_parallel, intra_parallel,
     pre_batch_size, batch_size, split_len,
-    enable_bf16, test_scenario, preprocessor_flag,
+    test_scenario, preprocessor_flag,
     profiler_flag, profiler_folder, profiler_iter, warmup_iter);
   
   testSettings.scenario = scenario_map[test_scenario];
@@ -118,6 +115,11 @@ int main(int argc, char **argv) {
 
   if (accuracy_mode)
     testSettings.mode = mlperf::TestMode::AccuracyOnly;
+
+  if (warmup_iter > 0) {
+    sleep(15);
+    std::cout << "Warmup done." << std::endl;
+  }
 
   std::cout << "Start " << test_scenario << " testing..." << std::endl;
   mlperf::StartTest(&sut, sut.GetQSL(), testSettings, logSettings);

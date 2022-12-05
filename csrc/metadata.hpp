@@ -3,9 +3,11 @@
 #include <string>
 #include <torch/script.h>
 #include <ATen/Parallel.h>
+#include <query_sample_library.h>
 
 namespace rnnt {
 using TensorVector = std::vector<at::Tensor>;
+using QuerySample = mlperf::QuerySample;
 using namespace torch::indexing;
 
 static const std::vector<char> LABELS = {
@@ -26,36 +28,27 @@ enum {
   MAX_SYMBOLS_PER_STEP = 30,
   MAX_WAV_LEN = 240000,
   MAX_FEA_LEN = 500,
-  HALF_MAX_FEA_LEN = 250
+  HALF_MAX_FEA_LEN = 250,
+  PADDED_INPUT_SIZE = 256
 };
 
-// batch samples
+
+// for Offline: batch ahead, split ahead
 class State {
-
 public:
-
-  State();
-
-  State(int32_t batch_size, bool enable_bf16 = true);
-
+  State() {};
   virtual ~State() = default;
-
-  void init(int32_t batch_size, bool enable_bf16 = true);
+  void init(int32_t batch_size, int32_t split_len = -1);
   void update(at::Tensor x, at::Tensor x_lens, int32_t split_len = -1);
-  void update (TensorVector x, TensorVector x_lens, int32_t split_len);
-  bool next ();
-  void reset (int batch_size);
-  void reset (int32_t batch_size, int32_t split_len);
+  bool next();
+  void clear();
 
-  int32_t batch_size_;
   int32_t finish_size_;
+  int32_t batch_size_;
+  int32_t split_len_;
   at::Tensor split_lens_;
-  bool enable_bf16_ = true;
   // transcription
-  at::Tensor F_;
-  at::Tensor F_lens_;
   TensorVector f_split_;
-  TensorVector f_lens_split_;
   at::Tensor f_;
   at::Tensor f_lens_;
   TensorVector pre_hx_;
@@ -70,9 +63,34 @@ public:
   at::Tensor res_;
   at::Tensor res_idx_;
   // infer index
-  at::Tensor finish_idx_;  // row
-  at::Tensor remain_lens_;  // col
+  at::Tensor finish_idx_;
+  at::Tensor remain_lens_;
+  at::Tensor infer_lens_;
   int32_t split_idx = 0;
+};
+
+
+// for Server: dynamic batch, dynamic split
+class PipelineState: public State {
+public:
+  PipelineState();
+  PipelineState(int32_t batch_size): finish_size_(batch_size) {};
+  virtual ~PipelineState() = default;
+  void init(int32_t batch_size, int32_t split_len = -1);
+  void update(
+      std::vector<std::tuple<QuerySample, at::Tensor, at::Tensor>> &dequeue_list,
+      std::vector<QuerySample> &samples,
+      int32_t dequeue_size, int32_t split_len);
+  bool next();
+
+  int32_t finish_size_;
+  int32_t stop_size_;
+  int32_t remain_size_ = 0;  // remain_size_ = finish_size_ - padded_size_
+  int32_t dequeue_size_ = 0;
+  int32_t padded_size_ = 0;  // batch_size_ = remain_size_ + dequeue_size_ + padded_size_
+  // transcription
+  at::Tensor F_;
+  at::Tensor F_lens_;
 };
 
 }  // namespace rnnt

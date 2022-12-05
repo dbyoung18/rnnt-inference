@@ -50,7 +50,6 @@ public:
       int pre_batch_size,
       int batch_size,
       long split_len = -1,
-      bool enable_bf16 = true,
       std::string test_scenario = "Offline",
       bool preprocessor = true,
       bool profiler = false,
@@ -77,14 +76,12 @@ public:
 
   static void QuerySamplesComplete(
       const std::vector<mlperf::QuerySample>& samples,
-      const at::Tensor& results,
-      const at::Tensor& result_lens
+      const rnnt::State& state
   );
 
   void QuerySamplesComplete(
       const std::vector<mlperf::QuerySample>& samples,
-      const at::Tensor& results,
-      const at::Tensor& result_lens,
+      const rnnt::PipelineState& state,
       const at::Tensor& finish_idx);
 
   mlperf::QuerySampleLibrary* GetQSL() {
@@ -110,7 +107,6 @@ private:
   size_t mPreThreshold_;
   size_t mThreshold_;
   long split_len_;
-  bool enable_bf16_;
   bool mHt_;
   int nMaxProc_;
   std::string test_scenario_;
@@ -124,12 +120,18 @@ private:
   bool batch_sort_;  // Offline only
   bool pipeline_flag_;  // Server only
 
-  int rootProc(int index, bool model_worker);
+  int rootProc(int index, bool model_worker = true);
   void thInstance(int index);
   void thInstancePreprocessor(int index);
   void thInstanceModel(int index);
-  void warmup(int which, int warmup_iter = 3);
+  void warmup(int which, int warmup_iter, int worker_type);
   std::tuple<at::Tensor, at::Tensor> inferPreprocessor(int which, qsl::Stack wav_stack);
-  void inferModel(int which, rnnt::State state);
-};
+  template <class T>
+  void inferModel(int which, T& state);
 
+  enum {
+    Processor = 0,  // for Server: Processor worker
+    Model = 1,  // for Server: Model worker
+    EndToEnd = 2  // for Offline
+  };
+};

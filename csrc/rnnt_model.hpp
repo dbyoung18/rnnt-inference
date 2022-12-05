@@ -36,13 +36,12 @@ struct RNNT {
 //
 class TorchModel {
 public:
-  TorchModel (const std::string filename, bool enable_bf16) {
+  TorchModel (const std::string filename) {
     Module model = load(filename);
     model.eval();
     model_ = RNNT(model);
     socket_model_[0] = model_;
     socket_model_[1] = RNNT(model.clone());
-    enable_bf16_ = enable_bf16;
   }
 
   TorchModel ();
@@ -58,7 +57,7 @@ public:
     return;
   }
 
-  void transcription_encode(int socket, State& state) {
+  void transcription_encode (int socket, State& state) {
     auto trans_res = socket_model_[socket].transcription(
         {state.f_, state.f_lens_, state.pre_hx_, state.pre_cx_, state.post_hx_, state.post_cx_}).toTuple()->elements();
     state.f_ = trans_res[0].toTensor();
@@ -103,7 +102,6 @@ public:
 private:
   RNNT model_;
   RNNT socket_model_[2];
-  bool enable_bf16_ = true;
 };
 
 }

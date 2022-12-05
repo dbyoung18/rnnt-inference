@@ -43,16 +43,15 @@ RNNTSUT::RNNTSUT(
     int pre_batch_size,
     int batch_size,
     long split_len,
-    bool enable_bf16,
     std::string test_scenario,
     bool preprocessor,
     bool profiler,
     const std::string& profiler_folder,
     int profiler_iter,
     int warmup_iter
-  ) : qsl_(sample_file), model_(model_file, enable_bf16), preprocessor_(preprocessor_file),
+  ) : qsl_(sample_file), model_(model_file), preprocessor_(preprocessor_file),
   nPreprocessors_(pre_parallel), nInstances_(inter_parallel), nProcsPerInstance_(intra_parallel),
-  mPreThreshold_(pre_batch_size), mThreshold_(batch_size), split_len_(split_len), enable_bf16_(enable_bf16),
+  mPreThreshold_(pre_batch_size), mThreshold_(batch_size), split_len_(split_len),
   test_scenario_(test_scenario), preprocessor_flag_(preprocessor), mQueuePreprocessed_(3000),
   profiler_flag_(profiler), profiler_folder_(profiler_folder), profiler_iter_(profiler_iter),
   warmup_iter_(warmup_iter) {
@@ -85,7 +84,7 @@ RNNTSUT::RNNTSUT(
 
 }
 
-int RNNTSUT::rootProc(int index, bool model_worker = true) {
+int RNNTSUT::rootProc(int index, bool model_worker) {
   // XXX : Assumed 2-sockets
   int root;
   if (model_worker) {
@@ -121,6 +120,9 @@ void RNNTSUT::thInstancePreprocessor(int index) {
 
   Queue_t snippet;
 
+  if (warmup_iter_ > 0)
+    warmup(which, warmup_iter_, Processor);
+
   {
     while (true) {
       // critical section
@@ -147,21 +149,17 @@ void RNNTSUT::thInstancePreprocessor(int index) {
       std::transform(samples.cbegin(), samples.cend(), indices.begin(),
           [](mlperf::QuerySample sample) {return sample.index;});
 
-      auto wav_stack = qsl_.AssembleSamples(std::move(indices), preprocessor_flag_);
-      auto pre_results = preprocessor_.inference_at(which, wav_stack);
-      auto fea_stack = qsl_.GetIValueListFrom(pre_results);
-      // Test preprocessor only(response {N, C, T})
-      // QuerySamplesComplete(samples, fea_stack[0].toTensor());
-      // continue;
-      // {Np, C, T} -> Np * {1, C, T}
-      auto fea_list = torch::split(fea_stack[0].toTensor(), 1);
-      auto fea_len_list = torch::split(fea_stack[1].toTensor(), 1);
+      at::Tensor fea, fea_lens;
+      auto input_stack = qsl_.AssembleSamples(std::move(indices), preprocessor_flag_);
+      std::tie(fea, fea_lens) = inferPreprocessor(which, input_stack);
+      auto fea_list = torch::split(fea, 1);
+      auto fea_lens_list = torch::split(fea_lens, 1);
       // TODO: bulk_enqueue
       for (int i = 0; i < samples.size(); ++i) {
-        mQueuePreprocessed_.enqueue({samples[i], fea_list[i], fea_len_list[i]});
+        mQueuePreprocessed_.enqueue({samples[i], fea_list[i], fea_lens_list[i]});
       }
-      std::cout << "preprocessor worker " << index << "::preprocess size " << snippet.size()
-          << ", current queue size: " << mQueuePreprocessed_.size_approx() << std::endl << std::flush;
+      // std::cout << "preprocessor worker " << index << "::preprocess size " << snippet.size()
+      //     << ", current queue size: " << mQueuePreprocessed_.size_approx() << std::endl << std::flush;
     }
   }
 }
@@ -186,83 +184,55 @@ void RNNTSUT::thInstanceModel(int index) {
     log_name = profiler_folder_ + "/" + Name() + "_" + std::to_string(index) + "_" + std::to_string(which) + ".json";
     std::ofstream out(log_name);
   }
+
+  if (warmup_iter_ > 0)
+    warmup(which, warmup_iter_, Model);
+
   {
     auto guard_ = std::make_unique<ProfileRecord>(profiler_flag_, log_name);
-    sleep_thread(1000);
 
-    size_t nIteration = 0;
+    int nIteration = 0;
+    int32_t dequeue_size;
+
     std::vector<mlperf::QuerySample> samples;
     samples.reserve(mThreshold_);
-
-    int32_t dequeue_size = 0;
-    // std::vector<std::tuple<mlperf::QuerySample, at::Tensor, at::Tensor>> dequeue_list(mThreshold_);
-    rnnt::State state (mThreshold_, enable_bf16_);
-    rnnt::TensorVector f, f_lens;
-    f.reserve(mThreshold_);
-    f_lens.reserve(mThreshold_);
+    rnnt::PipelineState state (mThreshold_);
 
     while (true) {
       auto start = std::chrono::high_resolution_clock::now();
       std::vector<std::tuple<mlperf::QuerySample, at::Tensor, at::Tensor>> dequeue_list(mThreshold_);
-      std::cout << "--dequeue_list.size:" << dequeue_list.size() << ",dequeue_list.capacity:" << dequeue_list.capacity() << ",finish_size:" << state.finish_size_ << std::endl;
-
-      // for (int i = 0; i < dequeue_size; ++i) {
-      //   auto sample = std::get<0>(dequeue_list[i]);
-      //   auto fi = std::get<1>(dequeue_list[i]).permute({2, 0, 1}).contiguous();
-      //   auto fi_len = std::get<2>(dequeue_list[i]);
-      //   std::cout << i << "::" << sample.index << ", fi.shape:" << fi.sizes() << std::endl;
-      // }
+      dequeue_size = 0;
 
       while (dequeue_size == 0 && !mStop_)
         dequeue_size = mQueuePreprocessed_.wait_dequeue_bulk_timed(dequeue_list.begin(), state.finish_size_, 0);
+
       std::cout << "model worker " << index << "::start server iteration " << nIteration
           << ", dequeue_size/require_size " << dequeue_size << "/" << state.finish_size_
           << ", current queue size: " << mQueuePreprocessed_.size_approx() << std::endl << std::flush;
       if (mStop_) break;
 
-      // insert new samples
-      for (int i = 0; i < dequeue_size; ++i) {
-        auto sample = std::get<0>(dequeue_list[i]);
-        auto fi = std::get<1>(dequeue_list[i]).permute({2, 0, 1}).contiguous();
-        auto fi_len = std::get<2>(dequeue_list[i]);
-        samples.emplace_back(sample);
-        f.emplace_back(fi);
-        f_lens.emplace_back(fi_len);
-      }
+      state.update(dequeue_list, samples, dequeue_size, split_len_);
+      auto pre_remain_size = state.remain_size_;
+      // std::cout << "finish update" << std::endl << std::flush;
+      inferModel(which, state);
 
-      state.reset(f_lens.size());
-      state.update(f, f_lens, split_len_);
-      // inference
-      // sleep_thread(500);
-      if (split_len_ != -1) {
-        // TODO: accumulate transcription for Server?
-        while(state.next()) {
-          model_.transcription_encode(which, state);
-          model_.greedy_decode(which, state);
-          if (state.finish_size_ != 0) {
-            QuerySamplesComplete(samples, state.res_, state.res_idx_+1, state.finish_idx_);
-            break;
-          }
-        }
-      } else {
-        model_.transcription_encode(which, state);
-        model_.greedy_decode(which, state);
-        QuerySamplesComplete(samples, state.res_, state.res_idx_+1);
-      }
-
-      samples.clear();
-      f.clear();
-      f_lens.clear();
+      QuerySamplesComplete(samples, state, state.finish_idx_);
+      // std::cout << "finish response" << std::endl << std::flush;
 
       if (profiler_iter_ != -1 && nIteration >= profiler_iter_)
         guard_->~ProfileRecord();
 
       auto end = std::chrono::high_resolution_clock::now();
       std::chrono::duration<double, std::milli> elapsed = end - start;
-      std::cout << "model worker " << index << "::finish server iteration " << nIteration
-          << ", infer bs " << state.batch_size_
-          << ", fea shape: " << state.f_.sizes()
-          << ", cost: " << elapsed.count() << "ms\n" << std::flush;
+      std::cout << "model worker " << index << "::finish iteration " << nIteration << ", "
+          // << "infer=finish+remain=pre_remain+dequeue+padded:"
+          << state.batch_size_ << "=" << state.finish_size_ << "+" << state.remain_size_ << "="
+          << pre_remain_size << "+" << state.dequeue_size_ << "+" << state.padded_size_
+          << ", infer model cost: " << elapsed.count() << "ms"
+          << ", current queue size: " << mQueuePreprocessed_.size_approx() << std::endl << std::flush;
+
+      // dequeue_list.clear();
+      samples.clear();
       nIteration += 1;
     }
   }
@@ -290,12 +260,13 @@ void RNNTSUT::thInstance(int index) {
     std::ofstream out(log_name);
   }
   if (warmup_iter_ > 0)
-    warmup(which, warmup_iter_);
+    warmup(which, warmup_iter_, EndToEnd);
   {
     auto guard_ = std::make_unique<ProfileRecord>(profiler_flag_, log_name);
     size_t nIteration = 0;
-    rnnt::State state (mThreshold_, enable_bf16_);
+    rnnt::State state;
     while (true) {
+      // auto start = std::chrono::high_resolution_clock::now();
       // critical section
       {
         std::unique_lock<std::mutex> l(mtx_);
@@ -323,16 +294,20 @@ void RNNTSUT::thInstance(int index) {
       auto input_stack = qsl_.AssembleSamples(std::move(indices), preprocessor_flag_);
       if (preprocessor_flag_) {
         std::tie(fea, fea_lens) = inferPreprocessor(which, input_stack);
+        fea = fea.permute({2, 0, 1}).contiguous();
       } else {
         fea = input_stack[0].toTensor();
         fea_lens = input_stack[1].toTensor();
       }
       // do inference
-      state.reset(fea_lens.size(0));
       state.update(fea, fea_lens, split_len_);
       inferModel(which, state);
 
-      QuerySamplesComplete(samples, state.res_, state.res_idx_+1);
+      QuerySamplesComplete(samples, state);
+
+      // auto end = std::chrono::high_resolution_clock::now();
+      // std::chrono::duration<double, std::milli> elapsed = end - start;
+      // std::cout << "Warmup done. cost:" << elapsed.count() << std::endl;
 
       nIteration += 1;
       if (profiler_iter_ != -1 && nIteration >= profiler_iter_)
@@ -343,9 +318,7 @@ void RNNTSUT::thInstance(int index) {
 
 void RNNTSUT::IssueQuery(const std::vector<mlperf::QuerySample>& samples) {
   std::unique_lock<std::mutex> l(mtx_);
-  //std::cout << "IssueQuery samples size " << samples.size() << std::endl;
   if (batch_sort_) {
-    std::cout << "use batch sort" << std::endl;
     // Parallel sort samples into a queue
     mQueue_ = qsl_.Sort(samples);
   } else {
@@ -355,37 +328,55 @@ void RNNTSUT::IssueQuery(const std::vector<mlperf::QuerySample>& samples) {
   ctrl_.notify_one();
 }
 
-void RNNTSUT::warmup(int which, int warmup_iter) {
+void RNNTSUT::warmup(int which, int warmup_iter, int worker_type) {
+  // auto start = std::chrono::high_resolution_clock::now();
   long batch_size = (long)mThreshold_;
+  at::Tensor wav, wav_lens;
+  at::Tensor fea, fea_lens;
+  auto state = (test_scenario_ == "Server") ? rnnt::State() : rnnt::PipelineState(batch_size);
   for (int i = 0; i < warmup_iter; ++i) {
-    at::Tensor fea, fea_lens;
-    if (preprocessor_flag_) {
-      auto wav = torch::randn({batch_size, rnnt::MAX_WAV_LEN});
-      auto wav_lens = torch::full({batch_size}, rnnt::MAX_WAV_LEN, torch::kInt64);
-      std::tie(fea, fea_lens) = inferPreprocessor(which, {wav, wav_lens});
-    } else {
-      fea = torch::randn({rnnt::MAX_FEA_LEN, batch_size, rnnt::TRANS_INPUT_SIZE});
-      fea_lens = torch::full({batch_size}, rnnt::MAX_FEA_LEN, torch::kInt32);
+    switch (worker_type) {
+      case Processor:
+        wav = torch::randn({batch_size, rnnt::MAX_WAV_LEN});
+        wav_lens = torch::full({batch_size}, rnnt::MAX_WAV_LEN, torch::kInt64);
+        std::tie(fea, fea_lens) = inferPreprocessor(which, {wav, wav_lens});
+        break;
+      case Model:
+        fea = torch::randn({batch_size, rnnt::TRANS_INPUT_SIZE, rnnt::MAX_FEA_LEN});
+        fea = fea.permute({2, 0, 1}).contiguous();
+        fea_lens = torch::full({batch_size}, rnnt::MAX_FEA_LEN, torch::kInt32);
+        state.update(fea, fea_lens, split_len_);
+        inferModel(which, state);
+        break;
+      case EndToEnd:
+        wav = torch::randn({batch_size, rnnt::MAX_WAV_LEN});
+        wav_lens = torch::full({batch_size}, rnnt::MAX_WAV_LEN, torch::kInt64);
+        std::tie(fea, fea_lens) = inferPreprocessor(which, {wav, wav_lens});
+        fea = fea.permute({2, 0, 1}).contiguous();
+        state.update(fea, fea_lens, split_len_);
+        inferModel(which, state);
+        break;
+      default:
+        std::cout << "Unknown, worker type must be [Processor/Model/EndToEnd]" << std::endl;
     }
-
-    rnnt::State state (fea_lens.size(0), enable_bf16_);
-    state.update(fea, fea_lens, split_len_);
-    inferModel(which, state);
   }
-  std::cout << "Warmup done." << std::endl;
+  // auto end = std::chrono::high_resolution_clock::now();
+  // std::chrono::duration<double, std::milli> elapsed = end - start;
+  // std::cout << "Warmup done. cost:" << elapsed.count() << std::endl;
 }
 
 std::tuple<at::Tensor, at::Tensor> RNNTSUT::inferPreprocessor(int which, qsl::Stack wav_stack) {
   auto pre_results = preprocessor_.inference_at(which, wav_stack).toTuple()->elements();
   // {N, C, T} -> {T, N, C}
-  auto fea = pre_results[0].toTensor().permute({2, 0, 1}).contiguous();
+  auto fea = pre_results[0].toTensor();
   auto fea_lens = pre_results[1].toTensor();
   // Test preprocessor only(response {N, C, T})
   //QuerySamplesComplete(samples, fea);
   return {fea, fea_lens};
 }
 
-void RNNTSUT::inferModel(int which, rnnt::State state) {
+template <class T>
+void RNNTSUT::inferModel(int which, T& state) {
   if (split_len_ != -1) {
     // accumulate transcription
     rnnt::TensorVector fi_list;
@@ -398,9 +389,11 @@ void RNNTSUT::inferModel(int which, rnnt::State state) {
   } else {
     model_.transcription_encode(which, state);
   }
-  state.f_lens_ = torch::ceil(state.F_lens_ / rnnt::STACK_TIME_FACTOR).to(torch::kInt32);
+  state.f_lens_ = torch::ceil(state.infer_lens_ / rnnt::STACK_TIME_FACTOR).to(torch::kInt32);
+  // std::cout << "finish encode" << std::endl << std::flush;
 
   model_.greedy_decode(which, state);
+  // std::cout << "finish decode" << std::endl << std::flush;
 }
 
 // for Preprocessor
@@ -420,16 +413,16 @@ void RNNTSUT::QuerySamplesComplete(
 // for Offline
 void RNNTSUT::QuerySamplesComplete(
     const std::vector<mlperf::QuerySample>& samples,
-    const at::Tensor& results,
-    const at::Tensor& result_lens) {
+    const rnnt::State& state) {
   std::vector<mlperf::QuerySampleResponse> responses(samples.size());
+  auto res_lens = state.res_idx_ + 1;
 
   for (size_t i = 0; i < samples.size(); ++i) {
-    auto result_lens_int = result_lens[i].item().toInt();
-    // std::cout << samples[i].index << "::" << models::TorchModel::sequence_to_string(results[i], result_lens_int) << std::endl << std::flush;
+    auto res_len = res_lens[i].item().toInt();
+    // std::cout << samples[i].index << "::" << models::TorchModel::sequence_to_string(state.res_[i], res_len) << std::endl << std::flush;
     responses[i].id = samples[i].id;
-    responses[i].data = reinterpret_cast<uintptr_t>(results[i].data_ptr());
-    responses[i].size = result_lens_int * 4;
+    responses[i].data = reinterpret_cast<uintptr_t>(state.res_[i].data_ptr());
+    responses[i].size = res_len * 4;
   }
   mlperf::QuerySamplesComplete(responses.data(), responses.size());
 }
@@ -437,18 +430,18 @@ void RNNTSUT::QuerySamplesComplete(
 // for Server
 void RNNTSUT::QuerySamplesComplete(
     const std::vector<mlperf::QuerySample>& samples,
-    const at::Tensor& results,
-    const at::Tensor& result_lens,
+    const rnnt::PipelineState& state,
     const at::Tensor& finish_idx) {
-  std::vector<mlperf::QuerySampleResponse> responses(samples.size());
+  std::vector<mlperf::QuerySampleResponse> responses(state.finish_size_ - state.padded_size_);
+  auto res_lens = state.res_idx_ + 1;
 
   for (size_t i = 0; i < samples.size(); ++i) {
-    auto result_lens_int = result_lens[i].item().toInt();
-    if (finish_idx[i].item().toBool()) {
-      // std::cout << samples[i].index << "::" << models::TorchModel::sequence_to_string(results[i], result_lens_int) << std::endl << std::flush;
+    auto res_len = res_lens[i].item().toInt();
+    if (finish_idx[i].item().toBool() && state.F_lens_[i].item().toInt() > 0) {
+      // std::cout << samples[i].index << "::" << models::TorchModel::sequence_to_string(state.res_[i], res_len) << std::endl << std::flush;
       responses[i].id = samples[i].id;
-      responses[i].data = reinterpret_cast<uintptr_t>(results[i].data_ptr());
-      responses[i].size = result_lens_int * 4;
+      responses[i].data = reinterpret_cast<uintptr_t>(state.res_[i].data_ptr());
+      responses[i].size = res_len * 4;
     }
   }
   mlperf::QuerySamplesComplete(responses.data(), responses.size());

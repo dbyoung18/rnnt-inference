@@ -10,7 +10,6 @@ export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:per
 : ${PRE_INTRA:=8}
 : ${INTER:=28}
 : ${INTRA:=4}
-: ${BF16:=true}
 : ${SCENARIO=${2:-"Offline"}}
 : ${ACCURACY:=false}
 : ${PROFILE:=false}
@@ -34,7 +33,8 @@ if [[ ${SCENARIO} == "Offline" ]]; then
 elif [[ ${SCENARIO} == "Server" ]]; then
   num_instance=${INTER}
   core_per_instance=${INTRA}
-  batch_size=${BS}
+  # batch_size=${BS}
+  batch_size=64
 fi
 
 SCRIPT_ARGS=" --test_scenario=${SCENARIO}"
@@ -47,8 +47,6 @@ SCRIPT_ARGS+=" --intra_parallel=${core_per_instance}"
 SCRIPT_ARGS+=" --batch_size=${batch_size}"
 SCRIPT_ARGS+=" --split_len=${LEN}"
 SCRIPT_ARGS+=" --warmup_iter=${WARMUP}"
-
-[ ${BF16} == "true" ] && SCRIPT_ARGS+=" --enable_bf16=true"
 
 if [[ ${WAV} == true ]]; then
   SCRIPT_ARGS+=" --sample_file=${WORK_DIR}/dev-clean-npy.pt --preprocessor_file=${WORK_DIR}/preprocessor_jit.pt --preprocessor"
