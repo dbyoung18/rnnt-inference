@@ -43,7 +43,7 @@ class GreedyDecoder(torch.nn.Module):
         self.pre_hg = [
             torch.zeros((self.batch_size, RNNTParam.pred_hidden_size), dtype=pred_dtype) for layer in range(RNNTParam.pred_num_layers)]
         self.pre_cg = [
-            torch.zeros((self.batch_size, RNNTParam.pred_hidden_size), dtype=pred_dtype) for layer in range(RNNTParam.pred_num_layers)]
+            torch.zeros((self.batch_size, RNNTParam.pred_hidden_size), dtype=torch.float32) for layer in range(RNNTParam.pred_num_layers)]
 
         if self.split_len != -1:
             max_len = x_lens.max().item()

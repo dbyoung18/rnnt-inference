@@ -141,6 +141,24 @@ class TensorQuantizer(nn.Module):
         s += f" min_bound=${self._min_bound}"
         return s
 
+def transpose_tile_weight_bf16(weight, padding: bool = False):
+    row = weight.shape[0]
+    col = weight.shape[1]
+
+    col_step = (col + 31) // 32
+    col_tile = (row + 31) // 32
+    if padding:
+        pad_size = (0, col_step * 32 - col, 0, col_tile * 32 - row)
+        weight = torch.nn.functional.pad(weight, pad_size, "constant", 0.0)
+
+    weight = weight.view(col_tile * 16, 2, col)
+    weight = weight.transpose(1, 2).reshape(col_tile * 16, col * 2)
+    weight = weight.view(col_tile, 16, col * 2)
+    weight = weight.view(col_tile, 16, col_step, 2, 32)
+    weight = weight.permute(2, 3, 0, 1, 4).contiguous()
+
+    return weight
+
 def transpose_tile_weight(weight, padding: bool = False):
     row = weight.shape[0]
     col = weight.shape[1]

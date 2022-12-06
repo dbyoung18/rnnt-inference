@@ -74,7 +74,7 @@ class iLSTM(torch.nn.LSTM):
         if hx is None and cx is None:
             hx = [torch.zeros((x.size(1), self.hidden_size), dtype=x.dtype) for layer in range(self.num_layers)]
             cx = [torch.zeros((x.size(1), self.hidden_size), dtype=torch.float16) for layer in range(self.num_layers)]
-        x, hx, cx = P.lstm_int8(x, hx, cx, self.weights, self.rb_scale, self.in_scale, self.out_scale, self.skip_quant_y)
+        x, hx, cx = P.lstm_amx_int8(x, hx, cx, self.weights, self.rb_scale, self.in_scale, self.out_scale, self.skip_quant_y)
         return x, hx, cx
 
 
@@ -159,7 +159,7 @@ class iLSTMLayer(QuantLSTMLayer):
     def forward(self, x: Tensor, hx: Tensor, cx: Tensor, skip_quant_y: bool) -> Tuple[Tensor, Tensor, Tensor]:
         if self.first_layer:
             x = F.pad(x, (0, 64 - x.shape[-1] % 64), "constant", 0.0)
-        return P.lstm_layer_int8(x, hx, cx, self.weight_ih, self.weight_hh, self.bias_ih, self.bias_hh,
+        return P.lstm_layer_amx_int8(x, hx, cx, self.weight_ih, self.weight_hh, self.bias_ih, self.bias_hh,
                 self.rb_scale, self.in_quant_scale, self.out_quant_scale, skip_quant_y)
 
         gates_list = []
