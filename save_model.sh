@@ -3,7 +3,7 @@
 set -ex
 
 : ${WORK_DIR=${1:-${PWD}/mlperf-rnnt-librispeech}}
-: ${BATCH_SIZE=${2:-128}}
+: ${BS=${2:-128}}
 : ${LOG_LEVEL=${3:-10}}
 : ${INTER:=1}
 : ${INTRA:=4}
@@ -17,7 +17,7 @@ set -ex
 export PYTHONPATH=${PWD}:${PWD}/models/:${PYTHONPATH}
 export RNNT_LOG_LEVEL=${LOG_LEVEL}
 
-SCRIPT_ARGS=" --batch_size ${BATCH_SIZE}"
+SCRIPT_ARGS=" --batch_size ${BS}"
 SCRIPT_ARGS+=" --model_path ${MODEL_PATH}"
 SCRIPT_ARGS+=" --run_mode ${MODE}"
 SCRIPT_ARGS+=" --manifest_path ${WORK_DIR}/local_data/wav/dev-clean-wav.json"

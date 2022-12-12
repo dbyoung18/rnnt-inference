@@ -138,7 +138,7 @@ class FilterbankFeatures(nn.Module):
         self.max_length = max_length + max_pad
         OUT_FEAT = 256 if pad_output else 240
         OUT_LEN = 500
-        self.output_shape = torch.zeros((128, OUT_FEAT, OUT_LEN))
+        self.output_shape = torch.zeros((128, OUT_FEAT, OUT_LEN)) if pad_output else None
 
     def get_seq_len(self, seq_len):
         seq_len = torch.ceil(seq_len / self.hop_length).to(dtype=torch.int32)
@@ -161,8 +161,8 @@ class FilterbankFeatures(nn.Module):
         x = torch.stft(
             x, n_fft=self.n_fft, hop_length=self.hop_length,
             win_length=self.win_length,
-            center=False, window=self.window,
-		    return_complex=True)
+            center=True, window=self.window,
+            return_complex=True)
 
         # get power spectrum
         x = x.abs().square()

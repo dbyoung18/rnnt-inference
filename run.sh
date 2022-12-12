@@ -5,7 +5,7 @@ set -ex
 : ${CONDA_ENV=${1:-'rnnt-infer'}}
 : ${WORK_DIR=${2:-${PWD}/mlperf-rnnt-librispeech}}
 : ${LOCAL_DATA_DIR=${WORK_DIR}/local_data}
-: ${STAGE=${3:-5}}
+: ${STAGE=${3:-2}}
 
 mkdir -p ${WORK_DIR}
 
@@ -64,9 +64,9 @@ if [[ ${STAGE} -le 5 ]]; then
   # TODO: enable Server scenario
   for scenario in Offline; do
     echo '==> Run RNN-T ${scenario} accuracy'
-    ACCURACY=true SCENARIO=${scenario} WAV=true ./launch_sut.sh
+    ACCURACY=true SCENARIO=${scenario} WAV=true LEN=4 ./launch_sut.sh
     echo '==> Run RNN-T ${scenario} benchmark'
-    SCENARIO=${scenario} WAV=true ./launch_sut.sh
+    SCENARIO=${scenario} WAV=true LEN=4 ./launch_sut.sh
   done
   wait
 fi

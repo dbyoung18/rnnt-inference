@@ -132,9 +132,9 @@ def convert_dataset(args):
         manifest_filepath=manifest_path,
         labels=cfg["labels"]["labels"],
         batch_size=1,
-	shuffle=False
+        shuffle=False
     )
-    data_preprocessor = AudioPreprocessing(**cfg["input_eval"]).eval()
+    data_preprocessor = AudioPreprocessing(run_mode='f32', **cfg["input_eval"]).eval()
     preprocess_dataset(args, name, data_layer, data_preprocessor)
 
 if __name__ == "__main__":
