@@ -17,7 +17,6 @@ export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:per
 : ${DEBUG:=false}
 : ${MODE:=quant}
 : ${WAV:=true}
-: ${HT:=true}
 : ${COUNT:=3}
 : ${VERSION=${1:-"original"}}
 
@@ -55,7 +54,6 @@ else
   SCRIPT_ARGS+=" --sample_file=${WORK_DIR}/dev-clean-input.pt --preprocessor_file=${WORK_DIR}/preprocessor_jit.pt"
 fi
 
-[ ${HT} == false ]  && SCRIPT_ARGS+=" --disable-hyperthreading"
 [ ${PROFILE} == true ] && SCRIPT_ARGS+=" --profiler"
 [ ${ACCURACY} == true ] && SCRIPT_ARGS+=" --accuracy"
 if [[ ${SCENARIO} == "Server" ]]; then

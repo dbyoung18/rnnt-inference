@@ -51,7 +51,6 @@ public:
       int batch_size,
       long split_len = -1,
       bool enable_bf16 = true,
-      bool ht = true,
       std::string test_scenario = "Offline",
       bool preprocessor = true,
       bool profiler = false,
@@ -112,6 +111,7 @@ private:
   long split_len_;
   bool enable_bf16_;
   bool mHt_;
+  int nMaxProc_;
   std::string test_scenario_;
   bool preprocessor_flag_;
   moodycamel::BlockingConcurrentQueue<std::tuple<mlperf::QuerySample, at::Tensor, at::Tensor>> mQueuePreprocessed_;

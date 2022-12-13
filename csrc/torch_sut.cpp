@@ -38,7 +38,6 @@ RNNTSUT::RNNTSUT(
     int batch_size,
     long split_len,
     bool enable_bf16,
-    bool ht,
     std::string test_scenario,
     bool preprocessor,
     bool profiler,
@@ -47,21 +46,26 @@ RNNTSUT::RNNTSUT(
   ) : qsl_(sample_file), model_(model_file, enable_bf16), preprocessor_(preprocessor_file),
   nPreprocessors_(pre_parallel), nInstances_(inter_parallel), nProcsPerInstance_(intra_parallel),
   mPreThreshold_(pre_batch_size), mThreshold_(batch_size), split_len_(split_len), enable_bf16_(enable_bf16),
-  mHt_(ht), test_scenario_(test_scenario), preprocessor_flag_(preprocessor), mQueuePreprocessed_(3000),
+  test_scenario_(test_scenario), preprocessor_flag_(preprocessor), mQueuePreprocessed_(3000),
   profiler_flag_(profiler), profiler_folder_(profiler_folder), profiler_iter_(profiler_iter) {
 
   batch_sort_ = (test_scenario == "Offline");
   pipeline_flag_ = (test_scenario == "Server") && preprocessor_flag_;
 
-  auto nMaxProc = kmp::KMPLauncher::getMaxProc();
+  nMaxProc_ = std::thread::hardware_concurrency();
+  mHt_ = (nMaxProc_ == kmp::KMPLauncher::getMaxProc());
 
   // Verify nInstance_
-  if ((nProcsPerInstance_ * nInstances_ + pipeline_flag_ * nPreprocessors_) > (nMaxProc / (mHt_+1)))
-    nInstances_ = (nMaxProc / (mHt_ + 1) - pipeline_flag_ * nPreprocessors_) / nProcsPerInstance_;
+  if ((nProcsPerInstance_ * nInstances_ + pipeline_flag_ * nPreprocessors_) > (nMaxProc_ / (mHt_+1)))
+    nInstances_ = (nMaxProc_ / (mHt_ + 1) - pipeline_flag_ * nPreprocessors_) / nProcsPerInstance_;
+
+  std::cout << "Use HT: " << mHt_ << std::endl;
+  std::cout << "Use Preprocessor: " << preprocessor_flag_ << std::endl;
+  std::cout << "Use Pipeline: " << pipeline_flag_ << std::endl;
+  std::cout << "Sort samples: " << batch_sort_ << std::endl;
 
   // Construct instances
   if (pipeline_flag_) {
-    std::cout << "Use pipeline mode!" << std::endl;
     mInstances_.emplace_back(&RNNTSUT::thInstancePreprocessor, this, 0);
     for (int i = 0; i < nInstances_; ++ i)
       mInstances_.emplace_back(&RNNTSUT::thInstanceModel, this, i);
@@ -72,21 +76,16 @@ RNNTSUT::RNNTSUT(
 
 }
 
-//
-// TODO: Use hierachy information to allocate place
-//
 int RNNTSUT::rootProc(int index, bool model_worker = true) {
-  auto nMaxProc = kmp::KMPLauncher::getMaxProc();
-
-  // XXX : Assumed 2-sockets, HT on !!!
+  // XXX : Assumed 2-sockets
   int root;
   if (model_worker) {
-    int part[] = {nMaxProc - pipeline_flag_ * nPreprocessors_,
-      nMaxProc *(2 + (int)mHt_)/4 - pipeline_flag_ * (nPreprocessors_/2)};
+    int part[] = {nMaxProc_ - pipeline_flag_ * nPreprocessors_,
+      nMaxProc_ * (2 + (int)mHt_) / 4 - pipeline_flag_ * (nPreprocessors_ / 2)};
     auto select = index & 1;
-    root = part[select] - nProcsPerInstance_ * ((index>>1) + 1);
+    root = part[select] - nProcsPerInstance_ * ((index >> 1) + 1);
   } else {
-    root = nMaxProc - nPreprocessors_;
+    root = nMaxProc_ - nPreprocessors_;
   }
 
   // Dump binding info

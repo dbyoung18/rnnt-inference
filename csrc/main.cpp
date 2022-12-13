@@ -47,10 +47,6 @@ int main(int argc, char **argv) {
            {"enable_bf16", "Whether enable bf16 for prediction & joint",
             cxxopts::value<bool>()->default_value("false")},
 
-           {"disable-hyperthreading",
-            "Whether system enabled hyper-threading or not",
-            cxxopts::value<bool>()->default_value("false")},
-
            {"k,test_scenario", "Test scenario [Offline, Server]",
             cxxopts::value<std::string>()->default_value("Offline")},
 
@@ -91,7 +87,6 @@ int main(int argc, char **argv) {
   auto batch_size = parsed_opts["batch_size"].as<int>();
   auto split_len = parsed_opts["split_len"].as<int>();
   auto enable_bf16 = parsed_opts["enable_bf16"].as<bool>();
-  auto disable_ht = parsed_opts["disable-hyperthreading"].as<bool>();
   auto test_scenario = parsed_opts["test_scenario"].as<std::string>();
   auto preprocessor_flag = parsed_opts["preprocessor"].as<bool>();
   auto profiler_flag = parsed_opts["profiler"].as<bool>();
@@ -110,7 +105,7 @@ int main(int argc, char **argv) {
     sample_file, model_file, preprocessor_file,
     pre_parallel, inter_parallel, intra_parallel,
     pre_batch_size, batch_size, split_len,
-    enable_bf16, !disable_ht, test_scenario, preprocessor_flag,
+    enable_bf16, test_scenario, preprocessor_flag,
     profiler_flag, profiler_folder, profiler_iter);
   
   testSettings.scenario = scenario_map[test_scenario];
