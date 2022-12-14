@@ -151,9 +151,9 @@ def transpose_tile_weight_bf16(weight, padding: bool = False):
         pad_size = (0, col_step * 32 - col, 0, col_tile * 32 - row)
         weight = torch.nn.functional.pad(weight, pad_size, "constant", 0.0)
 
-    weight = weight.view(col_tile * 16, 2, col)
-    weight = weight.transpose(1, 2).reshape(col_tile * 16, col * 2)
-    weight = weight.view(col_tile, 16, col * 2)
+    weight = weight.view(col_tile * 16, 2, col_step * 32)
+    weight = weight.transpose(1, 2).reshape(col_tile * 16, col_step * 64)
+    weight = weight.view(col_tile, 16, col_step * 64)
     weight = weight.view(col_tile, 16, col_step, 2, 32)
     weight = weight.permute(2, 3, 0, 1, 4).contiguous()
 
@@ -169,9 +169,9 @@ def transpose_tile_weight(weight, padding: bool = False):
         pad_size = (0, col_step * 64 - col, 0, col_tile * 64 - row)
         weight = torch.nn.functional.pad(weight, pad_size, "constant", 0.0)
 
-    weight = weight.view(col_tile * 16, 4, col)
-    weight = weight.transpose(1, 2).reshape(col_tile * 16, col * 4)
-    weight = weight.view(col_tile, 16, col * 4)
+    weight = weight.view(col_tile * 16, 4, col_step * 64)
+    weight = weight.transpose(1, 2).reshape(col_tile * 16, col_step * 256)
+    weight = weight.view(col_tile, 16, col_step * 256)
     weight = weight.view(col_tile, 16, col_step, 4, 64)
     weight = weight.permute(2, 3, 0, 1, 4).contiguous()
 

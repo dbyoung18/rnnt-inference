@@ -14,6 +14,7 @@ linear_gelu = torch.ops.intel_mlperf.linear_gelu
 amx_linear = torch.ops.intel_mlperf.amx_linear
 amx_linear_i8o32 = torch.ops.intel_mlperf.amx_linear_i8o32
 amx_linear_bf16_accum_relu = torch.ops.intel_mlperf.amx_linear_bf16_accum_relu
+amx_linear_i16o32 = torch.ops.intel_mlperf.amx_linear_i16o32
 baddbmm_out_ = torch.ops.intel_mlperf.baddbmm_out_
 prepack_linear_weight = torch.ops.intel_mlperf.prepack_linear_weight
 matmul_out_ = torch.ops.intel_mlperf.matmul_out_
