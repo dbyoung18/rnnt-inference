@@ -203,12 +203,14 @@ class Joint(torch.nn.Module):
     @torch.jit.ignore
     def prepack_weights(self):
         if self.enable_bf16:
-            # self.linear1_trans.weight = Parameter(transpose_tile_weight_bf16(self.linear1_trans.weight.to(torch.bfloat16).transpose(1, 0)), requires_grad=False)
-            self.linear1_trans.weight = Parameter(P.prepack_linear_weight(self.linear1_trans.weight.to(torch.bfloat16)), requires_grad=False)
-            self.linear1_trans.bias = Parameter(self.linear1_trans.bias.to(torch.bfloat16), requires_grad=False)
-            # self.linear1_pred.weight = Parameter(transpose_tile_weight_bf16(self.linear1_pred.weight.to(torch.bfloat16).transpose(1, 0)), requires_grad=False)
-            self.linear1_pred.weight = Parameter(P.prepack_linear_weight(self.linear1_pred.weight.to(torch.bfloat16)), requires_grad=False)
-            self.linear1_pred.bias = Parameter(self.linear1_pred.bias.to(torch.bfloat16), requires_grad=False)
+            self.linear1_bias = Parameter(self.linear1_trans.bias + self.linear1_pred.bias, requires_grad=False)
+            self.linear1_trans.weight = Parameter(transpose_tile_weight_bf16(self.linear1_trans.weight.to(torch.bfloat16).transpose(1, 0)), requires_grad=False)
+            # self.linear1_trans.weight = Parameter(P.prepack_linear_weight(self.linear1_trans.weight.to(torch.bfloat16)), requires_grad=False)
+            # self.linear1_trans.bias = Parameter(self.linear1_trans.bias.to(torch.bfloat16), requires_grad=False)
+            self.linear1_pred.weight = Parameter(transpose_tile_weight_bf16(self.linear1_pred.weight.to(torch.bfloat16).transpose(1, 0)), requires_grad=False)
+            # self.linear1_pred.weight = Parameter(P.prepack_linear_weight(self.linear1_pred.weight.to(torch.bfloat16)), requires_grad=False)
+            # self.linear1_pred.bias = Parameter(self.linear1_pred.bias.to(torch.bfloat16), requires_grad=False)
+            # self.linear2.weight = Parameter(transpose_tile_weight_bf16(self.linear2.weight.to(torch.bfloat16).transpose(1, 0)), requires_grad=False)
             self.linear2.weight = Parameter(self.linear2.weight.to(torch.bfloat16).transpose(1, 0), requires_grad=False)
             # self.linear2.bias = Parameter(self.linear2.bias.to(torch.bfloat16), requires_grad=False)
         else:
@@ -227,11 +229,11 @@ class Joint(torch.nn.Module):
         """
         if self.enable_bf16:
             # y = P.amx_linear_bf16(f, self.linear1_trans.weight, self.linear1_trans.bias)
-            y = P.linear(f, self.linear1_trans.weight, self.linear1_trans.bias, None, None)
+            # y = P.linear(f, self.linear1_trans.weight, self.linear1_trans.bias, None, None)
             # TODO: fuse linear + add + relu
-            # y += P.amx_linear_bf16(g, self.linear1_pred.weight, self.linear1_pred.bias)
-            y += P.linear(g, self.linear1_pred.weight, self.linear1_pred.bias, None, None)
-            y = self.relu(y)
+            y = P.amx_linear_bf16_accum_relu(f, self.linear1_trans.weight, g, self.linear1_pred.weight, self.linear1_bias)
+            # y += P.linear(g, self.linear1_pred.weight, self.linear1_pred.bias, None, None)
+            # y = self.relu(y)
             # TODO: enable 1dnn bf16 for last layer
             y = torch.matmul(y, self.linear2.weight) + self.linear2.bias
             # y = P.linear(y, self.linear2.weight, self.linear2.bias, None, None)
