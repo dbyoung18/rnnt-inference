@@ -18,6 +18,7 @@ export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:per
 : ${MODE:=quant}
 : ${WAV:=true}
 : ${COUNT:=3}
+: ${WARMUP:=-1}
 : ${VERSION=${1:-"original"}}
 
 SUT_DIR=$(pwd)
@@ -45,6 +46,7 @@ SCRIPT_ARGS+=" --inter_parallel=${num_instance}"
 SCRIPT_ARGS+=" --intra_parallel=${core_per_instance}"
 SCRIPT_ARGS+=" --batch_size=${batch_size}"
 SCRIPT_ARGS+=" --split_len=${LEN}"
+SCRIPT_ARGS+=" --warmup_iter=${WARMUP}"
 
 [ ${BF16} == "true" ] && SCRIPT_ARGS+=" --enable_bf16=true"
 

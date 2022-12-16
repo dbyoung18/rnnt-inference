@@ -71,8 +71,9 @@ class GreedyDecoder(torch.nn.Module):
         self.batch_idx =  torch.range(0, self.batch_size-1, dtype=torch.int64)
         self.trace = [[0]*f_len for f_len in f_lens]  # debug only
         # 1. do transcription
-        f, f_lens, self.pre_hx, self.pre_cx, self.post_hx, self.post_cx = self.rnnt.transcription(
+        f, self.pre_hx, self.pre_cx, self.post_hx, self.post_cx = self.rnnt.transcription(
                 f, f_lens, self.pre_hx, self.pre_cx, self.post_hx, self.post_cx)
+        f_lens = torch.ceil(f_lens / RNNTParam.stack_time_factor).to(torch.int32)
         self.eos_idx = torch.clamp(f_lens-1, min=0)
         if self.enable_bf16:
             f = f.to(torch.bfloat16)
@@ -123,8 +124,9 @@ class GreedyDecoder(torch.nn.Module):
         self.symbols_added = torch.zeros(self.batch_size, dtype=torch.int32)
         self.time_idx = torch.zeros(self.batch_size, dtype=torch.int32)
         # 1. do transcription
-        f, f_lens, self.pre_hx, self.pre_cx, self.post_hx, self.post_cx = self.rnnt.transcription(
+        f, self.pre_hx, self.pre_cx, self.post_hx, self.post_cx = self.rnnt.transcription(
                 f, f_lens, self.pre_hx, self.pre_cx, self.post_hx, self.post_cx)
+        f_lens = torch.ceil(f_lens / RNNTParam.stack_time_factor).to(torch.int32)
         fi = f[0]
 
         while True:

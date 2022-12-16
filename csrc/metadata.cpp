@@ -27,14 +27,14 @@ void State::init (int32_t batch_size, bool enable_bf16) {
     pre_cg_.emplace_back(torch::empty({batch_size_, PRED_HIDDEN_SIZE}, torch::kFloat32));
   }
   // init res tensors
-  res_ = torch::empty({batch_size_, int(HALF_MAX_LEN * MAX_SYMBOLS_PER_STEP)}, torch::kInt32);
+  res_ = torch::empty({batch_size_, int(HALF_MAX_FEA_LEN * MAX_SYMBOLS_PER_STEP)}, torch::kInt32);
   res_idx_ = torch::empty({batch_size_}, torch::kInt32);
   // init infer index
   finish_idx_ = torch::empty({batch_size_}, torch::kBool);
   finish_size_ = 0;
   remain_lens_ = torch::empty({batch_size_}, torch::kInt32);
   split_idx = 0;
-  F_ = torch::empty({MAX_LEN, batch_size_, TRANS_INPUT_SIZE});
+  F_ = torch::empty({MAX_FEA_LEN, batch_size_, TRANS_INPUT_SIZE});
   F_lens_ = torch::empty({batch_size_}, torch::kInt64);
 }
 
@@ -44,9 +44,10 @@ void State::update (at::Tensor f, at::Tensor f_lens, int32_t split_len) {
   if (split_len == -1) {
     f_ = f;
     f_lens_ = f_lens;
+    F_lens_ = f_lens;
   } else {
     F_lens_ = f_lens;
-    // f = at::pad(f, {0, 0, 0, 0, 0, MAX_LEN-f.size(0)}, "constant", 0);
+    // f = at::pad(f, {0, 0, 0, 0, 0, MAX_FEA_LEN-f.size(0)}, "constant", 0);
     f_split_ = torch::split(f, split_len);
     split_lens_ = at::full({batch_size_}, split_len, torch::kInt32);
     remain_lens_ = f_lens.clone();
@@ -79,7 +80,7 @@ bool State::next () {
     remain_lens_ -= f_lens_;
     finish_idx_ = f_lens_.eq(0);
     finish_size_ = finish_idx_.count_nonzero().item().toInt();
-    status &= (finish_size_ != batch_size_);
+    // status &= (finish_size_ != batch_size_);
   }
   return status;
 }

@@ -55,7 +55,8 @@ public:
       bool preprocessor = true,
       bool profiler = false,
       const std::string& profiler_foler = "",
-      int profiler_iter = -1
+      int profiler_iter = -1,
+      int warmup_iter = -1
   );
 
   ~RNNTSUT ();
@@ -118,7 +119,8 @@ private:
   // std::unique_ptr<ProfileRecord> guard_;
   bool profiler_flag_;
   std::string profiler_folder_;
-  size_t profiler_iter_;
+  int profiler_iter_;
+  int warmup_iter_;
   bool batch_sort_;  // Offline only
   bool pipeline_flag_;  // Server only
 
@@ -126,5 +128,8 @@ private:
   void thInstance(int index);
   void thInstancePreprocessor(int index);
   void thInstanceModel(int index);
+  void warmup(int which, int warmup_iter = 3);
+  std::tuple<at::Tensor, at::Tensor> inferPreprocessor(int which, qsl::Stack wav_stack);
+  void inferModel(int which, rnnt::State state);
 };
 

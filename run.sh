@@ -14,8 +14,6 @@ if [[ ${STAGE} -le -2 ]]; then
   conda create -y -n ${CONDA_ENV} python=3.8
 fi
 
-source activate ${CONDA_ENV}
-
 if [[ ${STAGE} -le -1 ]]; then
   echo '==> Preparing env'
   ./prepare_conda_env.sh

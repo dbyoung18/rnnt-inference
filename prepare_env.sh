@@ -5,7 +5,6 @@ set -ex
 CONDA_ENV=${1:-'rnnt-infer'}
 HOME_DIR=${2:-${PWD}}
 
-source activate ${CONDA_ENV}
 pushd ${HOME_DIR}
 
 # use gcc-9 compile clang-15

@@ -62,11 +62,10 @@ public:
     auto trans_res = socket_model_[socket].transcription(
         {state.f_, state.f_lens_, state.pre_hx_, state.pre_cx_, state.post_hx_, state.post_cx_}).toTuple()->elements();
     state.f_ = trans_res[0].toTensor();
-    state.f_lens_ = trans_res[1].toTensor();
-    state.pre_hx_  = trans_res[2].toTensorVector();
-    state.pre_cx_  = trans_res[3].toTensorVector();
-    state.post_hx_  = trans_res[4].toTensorVector();
-    state.post_cx_  = trans_res[5].toTensorVector();
+    state.pre_hx_  = trans_res[1].toTensorVector();
+    state.pre_cx_  = trans_res[2].toTensorVector();
+    state.post_hx_  = trans_res[3].toTensorVector();
+    state.post_cx_  = trans_res[4].toTensorVector();
   }
 
   void greedy_decode (int socket, State& state) {

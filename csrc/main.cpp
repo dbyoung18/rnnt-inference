@@ -63,6 +63,9 @@ int main(int argc, char **argv) {
            {"profiler_iter", "Profile iteration number",
             cxxopts::value<int>()->default_value("-1")},
 
+           {"warmup_iter", "Warmup iteration number",
+            cxxopts::value<int>()->default_value("-1")},
+
            {"c,mlperf_config", "Configuration File for LoadGen",
             cxxopts::value<std::string>()->default_value("mlperf.conf")},
 
@@ -92,6 +95,7 @@ int main(int argc, char **argv) {
   auto profiler_flag = parsed_opts["profiler"].as<bool>();
   auto profiler_folder = parsed_opts["profiler_folder"].as<std::string>();
   auto profiler_iter = parsed_opts["profiler_iter"].as<int>();
+  auto warmup_iter = parsed_opts["warmup_iter"].as<int>();
   auto mlperf_conf = parsed_opts["mlperf_config"].as<std::string>();
   auto user_conf = parsed_opts["user_config"].as<std::string>();
   auto output_dir = parsed_opts["output_dir"].as<std::string>();
@@ -106,7 +110,7 @@ int main(int argc, char **argv) {
     pre_parallel, inter_parallel, intra_parallel,
     pre_batch_size, batch_size, split_len,
     enable_bf16, test_scenario, preprocessor_flag,
-    profiler_flag, profiler_folder, profiler_iter);
+    profiler_flag, profiler_folder, profiler_iter, warmup_iter);
   
   testSettings.scenario = scenario_map[test_scenario];
   testSettings.FromConfig(mlperf_conf, "rnnt", test_scenario);

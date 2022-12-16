@@ -95,7 +95,7 @@ class Transcription(torch.nn.Module):
     def forward(self,
             x: Tensor, x_lens: Tensor,
             pre_hx: List[Tensor], pre_cx: List[Tensor],
-            post_hx: List[Tensor], post_cx: List[Tensor]) -> Tuple[Tensor, Tensor, List[Tensor], List[Tensor], List[Tensor], List[Tensor]]:
+            post_hx: List[Tensor], post_cx: List[Tensor]) -> Tuple[Tensor, List[Tensor], List[Tensor], List[Tensor], List[Tensor]]:
         """
         Args:
           x: {T, N, IC}
@@ -107,16 +107,15 @@ class Transcription(torch.nn.Module):
 
         Returns:
           x: {T, N, OC}
-          x_lens: {N}
           pre_hx: [{N, C} * PRE_L]
           pre_cx: [{N, C} * PRE_L]
           post_hx: [{N, C} * POST_L]
           post_hx: [{N, C} * POST_L]
         """
         x, pre_hx, pre_cx = self.pre_rnn(x, pre_hx, pre_cx)
-        x, x_lens = self.stack_time(x, x_lens)
+        x = self.stack_time(x, x_lens)
         x, post_hx, post_cx = self.post_rnn(x, post_hx, post_cx)
-        return x, x_lens, pre_hx, pre_cx, post_hx, post_cx
+        return x, pre_hx, pre_cx, post_hx, post_cx
 
 
 class Prediction(torch.nn.Module):
@@ -258,7 +257,7 @@ class StackTime(torch.nn.Module):
         self.factor = factor
         self.run_mode = run_mode
 
-    def forward(self, x: Tensor, x_lens: Tensor) -> List[Tensor]:
+    def forward(self, x: Tensor, x_lens: Tensor) -> Tensor:
         """
         Args:
           x: {T, N, C}
@@ -269,12 +268,12 @@ class StackTime(torch.nn.Module):
           x_lens: {N}
         """
         if self.run_mode == "quant":
-            x, x_lens = self.forward_quant(x, x_lens)
+            x = self.forward_quant(x, x_lens)
         else:
-            x, x_lens = self.forward_f32(x, x_lens)
-        return x, x_lens
+            x = self.forward_f32(x, x_lens)
+        return x
 
-    def forward_f32(self, x: Tensor, x_lens: Tensor) -> List[Tensor]:
+    def forward_f32(self, x: Tensor, x_lens: Tensor) -> Tensor:
         x_lens = x_lens.to(torch.int64)
         for batch_idx in range(x.size(1)):
             x[x_lens[batch_idx]:, batch_idx, :] = 0
@@ -284,12 +283,11 @@ class StackTime(torch.nn.Module):
         x = torch.cat([x, zeros], 1)
         x = torch.reshape(x, (N, x.shape[1] // self.factor, C * self.factor))
         x = torch.transpose(x, 0, 1).contiguous()
-        x_lens = torch.ceil(x_lens / self.factor).to(torch.int32)
-        return x, x_lens
+        return x
 
-    def forward_quant(self, x: Tensor, x_lens: Tensor) -> List[Tensor]:
-        x, x_lens = P.stack_time(x, x_lens, self.factor)
-        return x, x_lens
+    def forward_quant(self, x: Tensor, x_lens: Tensor) -> Tensor:
+        x = P.stack_time(x, x_lens, self.factor)
+        return x
 
 
 class GreedyDecoderUpdate(torch.nn.Module):
