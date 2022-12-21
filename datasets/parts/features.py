@@ -97,6 +97,11 @@ class FilterbankFeatures(nn.Module):
                  pad_output=False):
         super(FilterbankFeatures, self).__init__()
 
+        BATCH_SIZE = 128
+        IN_FEAT = 80
+        OUT_FEAT = 256 if pad_output else IN_FEAT * self.frame_splicing
+        OUT_LEN = 500
+
         torch_windows = {
             'hann': torch.hann_window,
             'hamming': torch.hamming_window,
@@ -124,21 +129,25 @@ class FilterbankFeatures(nn.Module):
         window_tensor = window_fn(self.win_length,
                                   periodic=False).float() if window_fn else None
         filterbanks = torch.tensor(
-            librosa.filters.mel(sample_rate, self.n_fft, n_mels=nfilt, fmin=lowfreq,
+            librosa.filters.mel(sr=sample_rate, n_fft=self.n_fft, n_mels=nfilt, fmin=lowfreq,
                                 fmax=highfreq), dtype=torch.float).unsqueeze(0)
-        # self.fb = filterbanks
-        # self.window = window_tensor
+        fb_bias = torch.zeros((1, IN_FEAT, 1))
+        if self.dither > 0 and self.use_deterministic_dithering:
+            fb_bias += self.dither ** 2
+        if self.log:
+            fb_bias += 1e-20
         self.register_buffer("fb", filterbanks)
         self.register_buffer("window", window_tensor)
+        self.register_buffer("fb_bias", fb_bias)
         # Calculate maximum sequence length (# frames)
         max_length = 1 + math.ceil(
             (max_duration * sample_rate - self.win_length) / self.hop_length
         )
         max_pad = 16 - (max_length % 16)
         self.max_length = max_length + max_pad
-        OUT_FEAT = 256 if pad_output else 240
-        OUT_LEN = 500
-        self.output_shape = torch.zeros((128, OUT_FEAT, OUT_LEN)) if pad_output else None
+        self.output_shape = torch.zeros((BATCH_SIZE, OUT_FEAT, OUT_LEN)) if pad_output else None
+        self.norm_weight = torch.ones((BATCH_SIZE, OUT_FEAT, OUT_LEN))
+        self.norm_bias = torch.zeros((BATCH_SIZE, OUT_FEAT, OUT_LEN))
 
     def get_seq_len(self, seq_len):
         seq_len = torch.ceil(seq_len / self.hop_length).to(dtype=torch.int32)
@@ -155,33 +164,33 @@ class FilterbankFeatures(nn.Module):
             x += self.dither * torch.randn_like(x)
 
         # do preemphasis
-        x = torch.ops.intel_mlperf.preemphasis(x, coeff=self.preemph)
+        x = torch.ops.intel_mlperf.preemphasis(x, coeff=self.preemph, pad_size=self.n_fft // 2)
 
         # do stft
         x = torch.stft(
             x, n_fft=self.n_fft, hop_length=self.hop_length,
             win_length=self.win_length,
-            center=True, window=self.window,
+            center=False, window=self.window,
             return_complex=True)
 
         # get power spectrum
         x = x.abs().square()
 
-        if self.dither > 0 and self.use_deterministic_dithering:
-            x = x + self.dither ** 2
+        # if self.dither > 0 and self.use_deterministic_dithering:
+            # x = x + self.dither ** 2
         # dot with filterbank energies
-        x = torch.matmul(self.fb, x)
+        x = torch.baddbmm(self.fb_bias.expand(x.shape[0], -1, -1), self.fb.expand(x.shape[0], -1, -1), x)
 
         # log features if required
         if self.log:
-            x = torch.log(x + 1e-20)
+            x = torch.log(x)
 
         # frame splicing if required
         x = torch.ops.intel_mlperf.frame_splicing(x, self.frame_splicing)
 
         # normalize if required
         x = torch.ops.intel_mlperf.i_layernorm_pad(
-            x, torch.ones_like(x), torch.zeros_like(x), x_lens, 1e-12, unbiased=1, output_shape=self.output_shape)
+            x, self.norm_weight, self.norm_bias, x_lens, 1e-12, unbiased=1, output_shape=self.output_shape)
 
         return x, x_lens
 
