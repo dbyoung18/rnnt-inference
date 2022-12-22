@@ -145,34 +145,33 @@ Queue_t RNNTQuerySampleLibrary::Sort(
 //
 Stack RNNTQuerySampleLibrary::AssembleSamples(
     std::vector<QuerySampleIndex> indices, bool preprocessor) const {
-  TensorList x_list, x_lens_list;
-  x_list.reserve(indices.size());
-  x_lens_list.reserve(indices.size());
+  long batch_size = indices.size();
+  TensorList x_lens_list;
+  x_lens_list.reserve(batch_size);
   // Assemble x_lens
   for (auto index : indices)
     x_lens_list.emplace_back(x_lens_set_[index]);
   auto x_lens = at::cat(x_lens_list);
   auto maxLength = at::max(x_lens).item().toInt();
+  at::Tensor x;
+  auto tmp_idx = indices[0];
+  if (preprocessor)
+    x = at::zeros({batch_size, maxLength}, x_set_[tmp_idx].options());
+  else
+    x = at::zeros({maxLength, batch_size, x_set_[tmp_idx].size(1)}, x_set_[tmp_idx].options());
+
   // Assemble x
-  for (auto index : indices) {
-    auto x = x_set_[index];
-
-    auto len = x.size(0);
-    if (len < maxLength) {  // Padding needed
-      std::vector<int64_t> newShape;
-      if (preprocessor)
-        newShape = {maxLength};
-      else
-        newShape = {maxLength, x.size(1)};
-
-      auto padded_x = at::zeros(newShape, x.options());
-      padded_x.narrow(0, 0, len).copy_(x);
-      x_list.emplace_back(padded_x);
+  for (auto i = 0; i < batch_size; ++i) {
+    auto index = indices[i];
+    auto xi = x_set_[index];
+    auto len = xi.size(0);
+    if (preprocessor) {
+      x.narrow(0, i, 1).narrow(1, 0, len).copy_(xi);
     } else {
-      x_list.emplace_back(x);
+      x.narrow(1, i, 1).narrow(0, 0, len).copy_(xi);
     }
   }
-  auto x = at::stack(x_list, -2);  // {N, T} or {T, N, C}
+  //auto x = at::stack(x_list, -2);  // {N, T} or {T, N, C}
   return Stack {x, x_lens};
 }
 
