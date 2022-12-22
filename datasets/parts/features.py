@@ -97,6 +97,8 @@ class FilterbankFeatures(nn.Module):
                  pad_output=False):
         super(FilterbankFeatures, self).__init__()
 
+        self.frame_splicing = frame_splicing
+
         BATCH_SIZE = 128
         IN_FEAT = 80
         OUT_FEAT = 256 if pad_output else IN_FEAT * self.frame_splicing
@@ -117,7 +119,6 @@ class FilterbankFeatures(nn.Module):
         self.normalize = normalize
         self.log = log
         self.dither = dither
-        self.frame_splicing = frame_splicing
         self.nfilt = nfilt
         self.preemph = preemph
         self.pad_to = pad_to
