@@ -98,7 +98,30 @@ bool State::next () {
 // }
 
 void State::reset () {
-  init(batch_size_, enable_bf16_);
+  for (int32_t layer = 0; layer < PRE_NUM_LAYERS; ++layer) {
+    pre_hx_[layer].zero_();
+    pre_cx_[layer].zero_();
+  }
+  for (int32_t layer = 0; layer < POST_NUM_LAYERS; ++layer) {
+    post_hx_[layer].zero_();
+    post_cx_[layer].zero_();
+  }
+  // init prediction tensors
+  pre_g_.fill_(SOS);
+  for (int64_t layer = 0; layer < PRED_NUM_LAYERS; ++layer) {
+    pre_hg_[layer].zero_();
+    pre_cg_[layer].zero_();
+  }
+  // init res tensors
+  res_.fill_(SOS);
+  res_idx_.fill_(-1);
+  // init infer index
+  finish_idx_.fill_(true);
+  finish_size_ = 0;
+  remain_lens_.zero_();
+  split_idx = 0;
+  F_.zero_();
+  F_lens_.zero_();
 }
 
 // TODO: reset split_idx

@@ -289,6 +289,7 @@ void RNNTSUT::thInstance(int index) {
   {
     auto guard_ = std::make_unique<ProfileRecord>(profiler_flag_, log_name);
     size_t nIteration = 0;
+    rnnt::State state (mThreshold_, enable_bf16_);
     while (true) {
       // critical section
       {
@@ -309,7 +310,7 @@ void RNNTSUT::thInstance(int index) {
       }
 
       std::vector<mlperf::QuerySample> samples(snippet.begin(), snippet.end());
-      std::vector<mlperf::QuerySampleIndex> indices (samples.size());
+      std::vector<mlperf::QuerySampleIndex> indices(samples.size());
       std::transform(samples.cbegin(), samples.cend(), indices.begin(),
           [](mlperf::QuerySample sample) {return sample.index;});
       qsl::Stack fea_stack;
@@ -330,8 +331,6 @@ void RNNTSUT::thInstance(int index) {
         fea_lens = fea_stack[1].toTensor();
       }
       // do inference
-      auto actual_batch_size = fea_lens.size(0);
-      rnnt::State state (actual_batch_size, enable_bf16_);
       state.update(fea, fea_lens, split_len_);
 
       if (split_len_ != -1) {
@@ -351,6 +350,10 @@ void RNNTSUT::thInstance(int index) {
       model_.greedy_decode(which, state);
 
       QuerySamplesComplete(samples, state.res_, state.res_idx_+1);
+
+      samples.clear();
+      state.reset();
+
       nIteration += 1;
       if (profiler_iter_ != -1 && nIteration >= profiler_iter_)
         guard_->~ProfileRecord();
