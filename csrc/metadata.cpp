@@ -32,7 +32,7 @@ void State::init (int32_t batch_size, bool enable_bf16) {
   // init infer index
   finish_idx_ = torch::ones({batch_size_}, torch::kBool);
   finish_size_ = 0;
-  split_idx_ = torch::zeros({batch_size_}, torch::kInt32);
+  remain_lens_ = torch::zeros({batch_size_}, torch::kInt32);
   split_idx = 0;
   F_ = torch::zeros({MAX_LEN, batch_size_, TRANS_INPUT_SIZE});
   F_lens_ = torch::zeros({batch_size_}, torch::kInt64);
@@ -52,6 +52,7 @@ void State::update (at::Tensor f, at::Tensor f_lens, int32_t split_len) {
     // f = at::pad(f, {0, 0, 0, 0, 0, MAX_LEN-f.size(0)}, "constant", 0);
     f_split_ = torch::split(f, split_len);
     split_lens_ = at::full({batch_size_}, split_len, torch::kInt32);
+    remain_lens_ = f_lens.clone();
   }
 }
 
@@ -75,9 +76,10 @@ void State::update (TensorVector f, TensorVector f_lens, int32_t split_len) {
 bool State::next () {
   bool status = (split_idx != f_split_.size() && finish_size_ != batch_size_);
   if (status) {
-    f_lens_ = torch::min(split_lens_, (F_lens_ - split_idx * split_lens_).clamp(0));
+    f_lens_ = torch::min(split_lens_, remain_lens_);
     f_ = f_split_[split_idx];
     split_idx++;
+    remain_lens_ -= f_lens_;
     finish_idx_ = f_lens_.eq(0);
     finish_size_ = finish_idx_.count_nonzero().item().toInt();
     status &= (finish_size_ != batch_size_);
@@ -87,7 +89,7 @@ bool State::next () {
 
 // bool State::next (int32_t split_len, int32_t count) {
 //   reset(F_lens_.size(0), split_len);
-//   f_lens_ = torch::min(split_lens_, (F_lens_ - split_idx_).clamp(0));
+//   f_lens_ = torch::min(split_lens_, (F_lens_ - remain_lens_).clamp(0));
 //   f_ = F_.index({Slice(split_idx, split_idx + split_len, None)});
 //   finish_idx_ = f_lens_.eq(0);
 //   finish_size_ = torch::count_nonzero(finish_idx_).item().toInt();

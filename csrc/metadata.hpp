@@ -69,7 +69,7 @@ public:
   at::Tensor res_idx_;
   // infer index
   at::Tensor finish_idx_;  // row
-  at::Tensor split_idx_;  // col
+  at::Tensor remain_lens_;  // col
   int32_t split_idx = 0;
 };
 
