@@ -42,7 +42,7 @@ public:
   void update(at::Tensor x, at::Tensor x_lens, int32_t split_len = -1);
   void update (TensorVector x, TensorVector x_lens, int32_t split_len);
   bool next ();
-  void reset ();
+  void reset (int batch_size);
   void reset (int32_t batch_size, int32_t split_len);
 
   int32_t batch_size_;

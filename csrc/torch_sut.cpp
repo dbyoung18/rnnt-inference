@@ -227,6 +227,7 @@ void RNNTSUT::thInstanceModel(int index) {
         f_lens.emplace_back(fi_len);
       }
 
+      state.reset(f_lens.size());
       state.update(f, f_lens, split_len_);
       // inference
       // sleep_thread(500);
@@ -247,7 +248,6 @@ void RNNTSUT::thInstanceModel(int index) {
       }
 
       samples.clear();
-      state.reset();
       f.clear();
       f_lens.clear();
 
@@ -331,6 +331,7 @@ void RNNTSUT::thInstance(int index) {
         fea_lens = fea_stack[1].toTensor();
       }
       // do inference
+      state.reset(fea_lens.size(0));
       state.update(fea, fea_lens, split_len_);
 
       if (split_len_ != -1) {
@@ -350,9 +351,6 @@ void RNNTSUT::thInstance(int index) {
       model_.greedy_decode(which, state);
 
       QuerySamplesComplete(samples, state.res_, state.res_idx_+1);
-
-      samples.clear();
-      state.reset();
 
       nIteration += 1;
       if (profiler_iter_ != -1 && nIteration >= profiler_iter_)

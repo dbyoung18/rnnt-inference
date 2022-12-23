@@ -150,7 +150,7 @@ Stack RNNTQuerySampleLibrary::AssembleSamples(
   x_lens_list.reserve(batch_size);
   // Assemble x_lens
   for (auto index : indices)
-    x_lens_list.emplace_back(x_lens_set_[index]);
+    x_lens_list.emplace_back(x_lens_set_[index].to(at::kInt));
   auto x_lens = at::cat(x_lens_list);
   auto maxLength = at::max(x_lens).item().toInt();
   at::Tensor x;
@@ -168,7 +168,7 @@ Stack RNNTQuerySampleLibrary::AssembleSamples(
     if (preprocessor) {
       x.narrow(0, i, 1).narrow(1, 0, len).copy_(xi);
     } else {
-      x.narrow(1, i, 1).narrow(0, 0, len).copy_(xi);
+      x.index_put_({at::indexing::Slice(0, len), i, "..."}, xi);
     }
   }
   //auto x = at::stack(x_list, -2);  // {N, T} or {T, N, C}
