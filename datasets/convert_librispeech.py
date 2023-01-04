@@ -12,12 +12,12 @@ import tqdm
 sys.path.insert(0, os.getcwd())
 from dataset import AudioToTextDataLayer
 from glob import glob
-from preprocessing import AudioPreprocessing
-from preprocessing_utils import parallel_preprocess
+from processing import AudioProcessing
+from processing_utils import parallel_process
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Preprocess LibriSpeech.")
+    parser = argparse.ArgumentParser(description="Process LibriSpeech.")
     parser.add_argument("-i", "--input_dir", type=str, required=True,
                         help="Input downloaded dataset dir")
     parser.add_argument("-o", "--output_dir", type=str, required=True,
@@ -69,7 +69,7 @@ def flac_to_wav(args, name, dest_dir, output_json):
         dest_list = None
 
     print(f"==> Converting audio files to {dest_dir}")
-    dataset = parallel_preprocess(
+    dataset = parallel_process(
         dataset=dataset,
         input_dir=args.input_dir,
         dest_dir=dest_dir,
@@ -86,7 +86,7 @@ def flac_to_wav(args, name, dest_dir, output_json):
     with open(output_json, "w") as fp:
         json.dump(dataset, fp, indent=2)
 
-def preprocess_dataset(args, name, data_layer, data_preprocessor):
+def process_dataset(args, name, data_layer, data_processor):
     x_npy_dir = os.path.join(args.output_dir, "npy", name, "fp32")
     x_len_npy_dir = os.path.join(args.output_dir, "npy", name, "int32")
     os.makedirs(x_npy_dir, exist_ok=True)
@@ -105,7 +105,7 @@ def preprocess_dataset(args, name, data_layer, data_preprocessor):
         wavs.append(data[0].squeeze())
         wav_lens.append(data[1])
 
-        fea, fea_len = data_preprocessor(data[0], data[1])
+        fea, fea_len = data_processor(data[0], data[1])
         # {N, C, T} -> {T, N, C}
         fea = fea.permute(2, 0, 1).contiguous()
         feas.append(fea.squeeze().contiguous())
@@ -134,8 +134,8 @@ def convert_dataset(args):
         batch_size=1,
         shuffle=False
     )
-    data_preprocessor = AudioPreprocessing(run_mode='f32', **cfg["input_eval"]).eval()
-    preprocess_dataset(args, name, data_layer, data_preprocessor)
+    data_processor = AudioProcessing(run_mode='f32', **cfg["input_eval"]).eval()
+    process_dataset(args, name, data_layer, data_processor)
 
 if __name__ == "__main__":
     args = parse_args()

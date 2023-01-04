@@ -4,22 +4,22 @@
 #include <string>
 #include <torch/script.h>
 #include <ATen/Parallel.h>
-#include "rnnt_preprocessor.hpp"
 
+namespace rnnt {
 namespace models {
 //
 // Functionality:
 //   1. Model load&adjust
 //
-class AudioPreprocessor {
+class AudioProcessor {
 public:
-  AudioPreprocessor (const std::string filename) : model_(torch::jit::load(filename)) {
+  AudioProcessor (const std::string filename) : model_(torch::jit::load(filename)) {
     model_.eval();
     socket_model_[0] = model_;
     socket_model_[1] = model_.clone();
   }
 
-  AudioPreprocessor ();
+  AudioProcessor ();
 
   void load(const std::string filename) {
     model_ = torch::jit::load(filename);
@@ -40,4 +40,5 @@ private:
   torch::jit::script::Module socket_model_[2];
 };
 
-}
+}  // namespace models
+}  // namespace rnnt

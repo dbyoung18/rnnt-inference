@@ -23,7 +23,7 @@ import sox
 from tqdm import tqdm
 
 
-def preprocess(data, input_dir, dest_dir, dest_list, target_sr=None, speed=None,
+def process(data, input_dir, dest_dir, dest_list, target_sr=None, speed=None,
                overwrite=True):
     speed = speed or []
     speed.append(1)
@@ -73,9 +73,9 @@ def preprocess(data, input_dir, dest_dir, dest_list, target_sr=None, speed=None,
     return output_dict
 
 
-def parallel_preprocess(dataset, input_dir, dest_dir, dest_list, target_sr, speed, overwrite, parallel):
+def parallel_process(dataset, input_dir, dest_dir, dest_list, target_sr, speed, overwrite, parallel):
     with multiprocessing.Pool(parallel) as p:
-        func = functools.partial(preprocess,
+        func = functools.partial(process,
                                  input_dir=input_dir, dest_dir=dest_dir, dest_list=dest_list,
                                  target_sr=target_sr, speed=speed, overwrite=overwrite)
         dataset = list(tqdm(p.imap(func, dataset), total=len(dataset)))

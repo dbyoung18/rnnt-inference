@@ -22,7 +22,7 @@ SCRIPT_ARGS+=" --model_path ${MODEL_PATH}"
 SCRIPT_ARGS+=" --run_mode ${MODE}"
 SCRIPT_ARGS+=" --manifest_path ${WORK_DIR}/local_data/wav/dev-clean-wav.json"
 if [[ ${WAV} == true ]]; then
-  SCRIPT_ARGS+=" --calib_dataset_dir ${WORK_DIR}/dev-clean-npy.pt --toml_path configs/rnnt.toml --enable_preprocess"
+  SCRIPT_ARGS+=" --calib_dataset_dir ${WORK_DIR}/dev-clean-npy.pt --toml_path configs/rnnt.toml --enable_process"
 else
   SCRIPT_ARGS+=" --calib_dataset_dir ${WORK_DIR}/dev-clean-input.pt"
 fi

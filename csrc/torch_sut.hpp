@@ -19,10 +19,11 @@
 #include "kmp_launcher.hpp"
 #include "rnnt_qsl.hpp"
 #include "rnnt_model.hpp"
-#include "rnnt_preprocessor.hpp"
+#include "rnnt_processor.hpp"
 #include "blockingconcurrentqueue.h"
 #include <torch/csrc/autograd/profiler_legacy.h>
 
+namespace rnnt {
 class ProfileRecord {
 public:
   ProfileRecord (bool is_record, const std::string& profiler_file);
@@ -34,31 +35,25 @@ private:
   std::unique_ptr<torch::autograd::profiler::RecordProfile> torch_profiler;
 };
 
-
-class RNNTSUT : public mlperf::SystemUnderTest {
-  using Queue_t = std::list<mlperf::QuerySample>;
-  using Map_t = std::pair<mlperf::ResponseId, std::tuple<mlperf::QuerySample, rnnt::TensorVector, rnnt::TensorVector>>;
+class OfflineSUT : public mlperf::SystemUnderTest {
 public:
-  // configure inter parallel and intra paralel
-  RNNTSUT (
+  using Queue_t = std::list<mlperf::QuerySample>;
+  OfflineSUT (
       const std::string& model_file,
       const std::string& samples_file,
-      const std::string& preprocessor_file,
-      int pre_parallel,
+      const std::string& processor_file,
       int inter_parallel,
       int intra_parallel,
-      int pre_batch_size,
       int batch_size,
-      long split_len = -1,
-      std::string test_scenario = "Offline",
-      bool preprocessor = true,
-      bool profiler = false,
+      int split_len = -1,
+      const std::string test_scenario = "Offline",
+      bool processor = true,
       const std::string& profiler_foler = "",
       int profiler_iter = -1,
       int warmup_iter = -1
   );
 
-  ~RNNTSUT ();
+  ~OfflineSUT ();
 
   void IssueQuery(const std::vector<mlperf::QuerySample>& samples) override;
 
@@ -69,29 +64,25 @@ public:
     return name;
   }
 
+  mlperf::QuerySampleLibrary* GetQSL() {
+    return &qsl_;
+  }
+
+  // for Processor: test only
   static void QuerySamplesComplete(
       const std::vector<mlperf::QuerySample>& samples,
       const at::Tensor& results
   );
 
+  // for Offline: batching response
   static void QuerySamplesComplete(
       const std::vector<mlperf::QuerySample>& samples,
       const rnnt::State& state
   );
 
-  void QuerySamplesComplete(
-      const std::vector<mlperf::QuerySample>& samples,
-      const rnnt::PipelineState& state,
-      const at::Tensor& finish_idx);
-
-  mlperf::QuerySampleLibrary* GetQSL() {
-    return &qsl_;
-  }
-
-private:
   qsl::RNNTQuerySampleLibrary qsl_;
   models::TorchModel model_;
-  models::AudioPreprocessor preprocessor_;
+  models::AudioProcessor processor_;
 
   std::condition_variable ctrl_;
   std::mutex mtx_;
@@ -100,38 +91,77 @@ private:
   bool mStop_ {false};
 
   std::vector<std::thread> mInstances_;
-  int nPreprocessors_;
   int nInstances_;
-  int nProcsPerInstance_;
+  int nThreadsPerInstance_;
   // Control over max samples a instance will peek
-  size_t mPreThreshold_;
   size_t mThreshold_;
-  long split_len_;
+  int split_len_;
   bool mHt_;
-  int nMaxProc_;
+  int nMaxThread_;
   std::string test_scenario_;
-  bool preprocessor_flag_;
-  moodycamel::BlockingConcurrentQueue<std::tuple<mlperf::QuerySample, at::Tensor, at::Tensor>> mQueuePreprocessed_;
+  bool processor_flag_;
+
   // std::unique_ptr<ProfileRecord> guard_;
-  bool profiler_flag_;
   std::string profiler_folder_;
   int profiler_iter_;
   int warmup_iter_;
-  bool batch_sort_;  // Offline only
-  bool pipeline_flag_;  // Server only
+  bool batch_sort_;
 
-  int rootProc(int index, bool model_worker = true);
-  void thInstance(int index);
-  void thInstancePreprocessor(int index);
-  void thInstanceModel(int index);
-  void warmup(int which, int warmup_iter, int worker_type);
-  std::tuple<at::Tensor, at::Tensor> inferPreprocessor(int which, qsl::Stack wav_stack);
+  int rootProc(int index);
+  std::tuple<at::Tensor, at::Tensor> inferProcessor(int which, qsl::Stack wav_stack);
   template <class T>
-  void inferModel(int which, T& state);
+  void inferEncoder(int which, T& state);
+  template <class T>
+  void inferDecoder(int which, T& state);
+  void warmup(int which, int warmup_iter);
+  void thInstance(int index);
+};
 
-  enum {
-    Processor = 0,  // for Server: Processor worker
-    Model = 1,  // for Server: Model worker
-    EndToEnd = 2  // for Offline
+
+class ServerSUT : public OfflineSUT {
+public:
+  // configure inter parallel and intra paralel
+  ServerSUT (
+      const std::string& model_file,
+      const std::string& samples_file,
+      const std::string& processor_file,
+      int pre_parallel,
+      int inter_parallel,
+      int intra_parallel,
+      int pre_batch_size,
+      int batch_size,
+      int split_len = -1,
+      const std::string test_scenario = "Server",
+      bool processor = true,
+      const std::string& profiler_foler = "",
+      int profiler_iter = -1,
+      int warmup_iter = -1
+  );
+
+  int rootProc(int index, int worker_type);
+
+  // for Pipeline: early response
+  void QuerySamplesComplete(
+      const std::vector<mlperf::QuerySample>& samples,
+      const rnnt::PipelineState& state,
+      const at::Tensor& finish_idx);
+
+private:
+  int nProcessors_;
+  // Control over max samples a instance will peek
+  size_t mProThreshold_;
+  moodycamel::BlockingConcurrentQueue<std::tuple<mlperf::QuerySample, at::Tensor, at::Tensor>> mQueueProcessed_;
+  bool pipeline_flag_= true;
+  bool finish_processor_ = false;
+
+  void warmup(int which, int warmup_iter, int worker_type);
+  void thInstanceProducer(int index);
+  void thInstanceConsumer(int index);
+
+  enum WorkerType {
+    Producer = 0,
+    Consumer = 1,
   };
 };
+
+}  // namespace rnnt

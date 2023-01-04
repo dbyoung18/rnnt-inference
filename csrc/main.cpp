@@ -24,10 +24,10 @@ int main(int argc, char **argv) {
            {"m,model_file", "Torch Model File",
             cxxopts::value<std::string>()},
 
-           {"preprocessor_file", "Audio Preprocessor File",
+           {"processor_file", "Audio Processor File",
             cxxopts::value<std::string>()},
 
-           {"pre_parallel", "Instance Number of preprocessor(pipeline mode only)",
+           {"pre_parallel", "Instance Number of processor(pipeline mode only)",
             cxxopts::value<int>()->default_value("8")},
 
            {"n,inter_parallel", "Instance Number",
@@ -36,7 +36,7 @@ int main(int argc, char **argv) {
            {"j,intra_parallel", "Thread Number Per-Instance",
             cxxopts::value<int>()->default_value("4")},
 
-           {"pre_batch_size", "Preprocessor batch size",
+           {"pre_batch_size", "Processor batch size",
             cxxopts::value<int>()->default_value("32")},
 
            {"b,batch_size", "Offline Model Batch Size",
@@ -48,10 +48,7 @@ int main(int argc, char **argv) {
            {"k,test_scenario", "Test scenario [Offline, Server]",
             cxxopts::value<std::string>()->default_value("Offline")},
 
-           {"preprocessor", "Whether enbale audio preprocess or not",
-            cxxopts::value<bool>()->default_value("false")},
-
-           {"p,profiler", "Whether output trace json or not",
+           {"processor", "Whether enbale audio preprocess or not",
             cxxopts::value<bool>()->default_value("false")},
 
            {"f,profiler_folder",
@@ -80,7 +77,7 @@ int main(int argc, char **argv) {
 
   auto sample_file = parsed_opts["sample_file"].as<std::string>();
   auto model_file = parsed_opts["model_file"].as<std::string>();
-  auto preprocessor_file = parsed_opts["preprocessor_file"].as<std::string>();
+  auto processor_file = parsed_opts["processor_file"].as<std::string>();
   auto pre_parallel = parsed_opts["pre_parallel"].as<int>();
   auto inter_parallel = parsed_opts["inter_parallel"].as<int>();
   auto intra_parallel = parsed_opts["intra_parallel"].as<int>();
@@ -88,8 +85,7 @@ int main(int argc, char **argv) {
   auto batch_size = parsed_opts["batch_size"].as<int>();
   auto split_len = parsed_opts["split_len"].as<int>();
   auto test_scenario = parsed_opts["test_scenario"].as<std::string>();
-  auto preprocessor_flag = parsed_opts["preprocessor"].as<bool>();
-  auto profiler_flag = parsed_opts["profiler"].as<bool>();
+  auto processor_flag = parsed_opts["processor"].as<bool>();
   auto profiler_folder = parsed_opts["profiler_folder"].as<std::string>();
   auto profiler_iter = parsed_opts["profiler_iter"].as<int>();
   auto warmup_iter = parsed_opts["warmup_iter"].as<int>();
@@ -102,28 +98,44 @@ int main(int argc, char **argv) {
   mlperf::LogSettings logSettings;
   logSettings.log_output.outdir = output_dir;
 
-  RNNTSUT sut(
-    sample_file, model_file, preprocessor_file,
-    pre_parallel, inter_parallel, intra_parallel,
-    pre_batch_size, batch_size, split_len,
-    test_scenario, preprocessor_flag,
-    profiler_flag, profiler_folder, profiler_iter, warmup_iter);
-  
   testSettings.scenario = scenario_map[test_scenario];
   testSettings.FromConfig(mlperf_conf, "rnnt", test_scenario);
   testSettings.FromConfig(user_conf, "rnnt", test_scenario);
+  if (accuracy_mode) testSettings.mode = mlperf::TestMode::AccuracyOnly;
 
-  if (accuracy_mode)
-    testSettings.mode = mlperf::TestMode::AccuracyOnly;
+  if (test_scenario == "Offline") {
+    rnnt::OfflineSUT sut(
+      sample_file, model_file, processor_file,
+      inter_parallel, intra_parallel,
+      batch_size, split_len,
+      test_scenario, processor_flag,
+      profiler_folder, profiler_iter, warmup_iter);
 
-  if (warmup_iter > 0) {
-    sleep(15);
-    std::cout << "Warmup done." << std::endl;
+    if (warmup_iter > 0) {
+      std::cout << "Start warmup..." << std::endl;
+      sleep(15);
+      std::cout << "Warmup done." << std::endl;
+    }
+
+    std::cout << "Start " << test_scenario << " testing..." << std::endl;
+    mlperf::StartTest(&sut, sut.GetQSL(), testSettings, logSettings);
+    std::cout << "Testing done." << std::endl;
+  } else {
+    rnnt::ServerSUT sut(
+      sample_file, model_file, processor_file,
+      pre_parallel, inter_parallel, intra_parallel,
+      pre_batch_size, batch_size, split_len,
+      test_scenario, processor_flag,
+      profiler_folder, profiler_iter, warmup_iter);
+
+    if (warmup_iter > 0) {
+      sleep(15);
+      std::cout << "Warmup done." << std::endl;
+    }
+
+    std::cout << "Start " << test_scenario << " testing..." << std::endl;
+    mlperf::StartTest(&sut, sut.GetQSL(), testSettings, logSettings);
+    std::cout << "Testing done." << std::endl;
   }
-
-  std::cout << "Start " << test_scenario << " testing..." << std::endl;
-  mlperf::StartTest(&sut, sut.GetQSL(), testSettings, logSettings);
-  std::cout << "Testing done." << std::endl;
-
   return 0;
 }

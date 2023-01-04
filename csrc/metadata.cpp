@@ -3,6 +3,7 @@
 namespace rnnt {
 
 void State::init (int32_t batch_size, int32_t split_len) {
+  clear();
   batch_size_ = batch_size;
   split_len_ = split_len;
   if (split_len_ != -1)
@@ -59,7 +60,7 @@ void State::update (at::Tensor f, at::Tensor f_lens, int32_t split_len) {
     f_split_ = torch::split(f, split_len_);
     infer_lens_ = f_lens;
     remain_lens_ = f_lens.clone();
-    split_idx = 0;
+    split_idx_ = 0;
     finish_size_ = 0;
   }
 }
@@ -68,7 +69,7 @@ bool State::next () {
   bool status = (finish_size_ != batch_size_);
   if (status) {
     f_lens_ = torch::min(split_lens_, remain_lens_);
-    f_ = f_split_[split_idx++];
+    f_ = f_split_[split_idx_++];
     remain_lens_ -= f_lens_;
     finish_idx_ = remain_lens_.le(0);
     finish_size_ = finish_idx_.count_nonzero().item().toInt();
@@ -92,7 +93,7 @@ void PipelineState::init (int32_t batch_size, int32_t split_len) {
   F_ = torch::empty({MAX_FEA_LEN, batch_size_, PADDED_INPUT_SIZE});
   F_lens_ = torch::empty({batch_size_}, torch::kInt32);
   infer_lens_ = torch::empty({batch_size_}, torch::kInt32);
-  split_idx = 0;
+  split_idx_ = torch::empty({batch_size_}, torch::kInt32);
 }
 
 void PipelineState::update (
@@ -124,12 +125,6 @@ void PipelineState::update (
   // update res tensors
   res_.masked_fill_(finish_idx_.unsqueeze(1).expand({batch_size_, int(HALF_MAX_FEA_LEN * MAX_SYMBOLS_PER_STEP)}), SOS);
   res_idx_.masked_fill_(finish_idx_, -1);
-  // update infer index
-  infer_lens_.zero_();
-  // TODO: fix update split_idx
-  split_idx = 0;
-  padded_size_ = batch_size_ - remain_size_ - dequeue_size;
-  finish_size_ = padded_size_;
   // update f & f_lens
   F_.masked_fill_(finish_idx_.unsqueeze(0).unsqueeze(2).expand({MAX_FEA_LEN, batch_size_, PADDED_INPUT_SIZE}), 0);
   F_lens_.masked_fill_(finish_idx_, 0);
@@ -140,11 +135,11 @@ void PipelineState::update (
       remain_lens_.index_put_({i}, f_len);
       auto f = std::get<1>(dequeue_list[j]).permute({2, 0, 1}).contiguous();
       F_.index_put_({Slice(0, f_len), i}, f.index({Slice(0, f_len)}).squeeze());
-      samples.emplace_back(std::get<0>(dequeue_list[j]));
+      samples[i] = std::get<0>(dequeue_list[j]);
       ++j;
     }
   }
-
+  padded_size_ = batch_size_ - remain_size_ - dequeue_size;
   if (split_len_ == -1) {
     f_ = F_;
     f_lens_ = F_lens_;
@@ -153,7 +148,11 @@ void PipelineState::update (
     finish_size_ = batch_size_;
   } else {
     f_split_ = torch::split(F_, split_len_);
-    stop_size_ = batch_size_;
+    infer_lens_.zero_();
+    split_idx_.masked_fill_(finish_idx_, 0);
+    // stop_size_ = batch_size_;
+    stop_size_ = std::min(batch_size_, padded_size_ + 1);
+    finish_size_ = padded_size_;
   }
 }
 
@@ -161,9 +160,12 @@ bool PipelineState::next () {
   bool status = (finish_size_ < stop_size_);
   if (status) {
     f_lens_ = torch::min(split_lens_, remain_lens_);
-    // TODO: fix f_
-    f_ = f_split_[split_idx];
-    split_idx++;
+    TensorVector f_list;
+    f_list.reserve(batch_size_);
+    for (int32_t i = 0; i < batch_size_; ++i)
+      f_list.emplace_back(f_split_[split_idx_[i].item().toInt()].index({Slice(), i, Slice()}));
+    f_ = torch::stack(f_list, 1);
+    split_idx_ += 1;
     remain_lens_ -= f_lens_;
     infer_lens_ += f_lens_;
     finish_idx_ = remain_lens_.le(0);

@@ -12,11 +12,10 @@ export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:per
 : ${INTRA:=4}
 : ${SCENARIO=${2:-"Offline"}}
 : ${ACCURACY:=false}
-: ${PROFILE:=false}
 : ${DEBUG:=false}
 : ${MODE:=quant}
 : ${WAV:=true}
-: ${COUNT:=3}
+: ${PROFILE:=-1}
 : ${WARMUP:=-1}
 : ${VERSION=${1:-"original"}}
 
@@ -49,18 +48,18 @@ SCRIPT_ARGS+=" --split_len=${LEN}"
 SCRIPT_ARGS+=" --warmup_iter=${WARMUP}"
 
 if [[ ${WAV} == true ]]; then
-  SCRIPT_ARGS+=" --sample_file=${WORK_DIR}/dev-clean-npy.pt --preprocessor_file=${WORK_DIR}/preprocessor_jit.pt --preprocessor"
+  SCRIPT_ARGS+=" --sample_file=${WORK_DIR}/dev-clean-npy.pt --processor_file=${WORK_DIR}/processor_jit.pt --processor"
 else
-  SCRIPT_ARGS+=" --sample_file=${WORK_DIR}/dev-clean-input.pt --preprocessor_file=${WORK_DIR}/preprocessor_jit.pt"
+  SCRIPT_ARGS+=" --sample_file=${WORK_DIR}/dev-clean-input.pt --processor_file=${WORK_DIR}/processor_jit.pt"
 fi
 
-[ ${PROFILE} == true ] && SCRIPT_ARGS+=" --profiler"
-[ ${ACCURACY} == true ] && SCRIPT_ARGS+=" --accuracy"
 if [[ ${SCENARIO} == "Server" ]]; then
   SCRIPT_ARGS+=" --pre_parallel ${PRE_INTRA} --pre_batch_size ${PRE_BS}"
 fi
-if [[ ${ACCURACY} != true && ${COUNT} != "" ]]; then
-  SCRIPT_ARGS+=" --profiler_iter ${COUNT}"
+if [[ ${ACCURACY} == true ]]; then
+  SCRIPT_ARGS+=" --accuracy"
+else
+  SCRIPT_ARGS+=" --profiler_iter ${PROFILE}"
 fi
 
 [ ${DEBUG} != false ]  && EXECUTABLE=${SUT_DIR}/build_dbg/rnnt_inference

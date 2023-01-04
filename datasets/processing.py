@@ -23,7 +23,7 @@ import torch.nn as nn
 from datasets.parts.features import FeatureFactory
 
 
-class AudioPreprocessing(nn.Module):
+class AudioProcessing(nn.Module):
 
     def __init__(self, run_mode, **kwargs):
         nn.Module.__init__(self)    # For PyTorch API
@@ -34,4 +34,3 @@ class AudioPreprocessing(nn.Module):
     def forward(self, wavs: torch.Tensor, wav_lens: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         feas, fea_lens = self.featurizer(wavs, wav_lens)
         return feas, fea_lens
-

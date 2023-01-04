@@ -34,11 +34,11 @@ SCRIPT_ARGS+=" --run_mode ${MODE}"
 if [[ ${MODE} != "f32" && ${MODE} != "calib" && ${BF16} == true ]]; then
   SCRIPT_ARGS+=" --enable_bf16"
 fi
-# set dataset & preprocessor
+# set dataset & processor
 if [[ ${WAV} == true ]]; then
-  SCRIPT_ARGS+=" --infer_dataset_dir ${WORK_DIR}/dev-clean-npy.pt --enable_preprocess"
+  SCRIPT_ARGS+=" --infer_dataset_dir ${WORK_DIR}/dev-clean-npy.pt --enable_process"
   if [[ ${LOAD_JIT} == true ]]; then
-    SCRIPT_ARGS+=" --preprocessor_path ${WORK_DIR}/preprocessor_jit.pt"
+    SCRIPT_ARGS+=" --processor_path ${WORK_DIR}/processor_jit.pt"
   fi
 else
   SCRIPT_ARGS+=" --infer_dataset_dir ${WORK_DIR}/dev-clean-input.pt"

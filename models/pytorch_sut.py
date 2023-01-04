@@ -8,7 +8,7 @@ import toml
 import torch
 
 import _C as P
-from datasets.preprocessing import AudioPreprocessing
+from datasets.processing import AudioProcessing
 from decoder import GreedyDecoder
 from rnnt_qsl import RNNTQSL
 from tqdm import tqdm
@@ -17,16 +17,16 @@ from utils import *
 
 class PytorchSUT:
     def __init__(self, model_path, dataset_dir, batch_size=1, run_mode=None, args=None, **kwargs):
-        # create preprocessor
-        if args.enable_preprocess and os.path.exists(args.toml_path):
-            if args.load_jit and os.path.exists(args.preprocessor_path):
-                self.preprocessor = torch.jit.load(args.preprocessor_path)
+        # create processor
+        if args.enable_process and os.path.exists(args.toml_path):
+            if args.load_jit and os.path.exists(args.processor_path):
+                self.processor = torch.jit.load(args.processor_path)
             else:
                 config = toml.load(args.toml_path)
                 featurizer_config = config["input_eval"]
-                self.preprocessor = AudioPreprocessing(run_mode, **featurizer_config).eval()
+                self.processor = AudioProcessing(run_mode, **featurizer_config).eval()
         else:
-            self.preprocessor = None
+            self.processor = None
         self.batch_size = batch_size
         # create model
         if run_mode == "quant":
@@ -35,13 +35,13 @@ class PytorchSUT:
             from modeling_rnnt import RNNT
         rnnt = RNNT(model_path, run_mode, args.enable_bf16, args.load_jit).eval()
         self.model = GreedyDecoder(rnnt, run_mode, args.enable_bf16, args.split_len)
-        self.enable_preprocess = (self.preprocessor != None)
+        self.enable_process = (self.processor != None)
         self.scenario = args.scenario if run_mode != "calib" else None
         self.batch_sort = True if self.scenario == "Offline" else False
-        # jit preprocessor & model
+        # jit processor & model
         if not args.load_jit and args.save_jit:
-            if self.enable_preprocess:
-                self.preprocessor = jit_module(self.preprocessor)
+            if self.enable_process:
+                self.processor = jit_module(self.processor)
             self.model.rnnt = jit_model(self.model.rnnt)
         # create qsl & sut
         self.qsl = RNNTQSL(dataset_dir)
@@ -58,12 +58,12 @@ class PytorchSUT:
 
     def inference(self, batch_idx):
         with torch.no_grad():
-            if self.enable_preprocess:
+            if self.enable_process:
                 wavs = torch.nn.utils.rnn.pad_sequence(
                     [self.qsl[idx][0] for idx in batch_idx], batch_first=True)
                 wav_lens = torch.tensor(
                     [self.qsl[idx][1] for idx in batch_idx])
-                feas, fea_lens = self.preprocessor(wavs, wav_lens)
+                feas, fea_lens = self.processor(wavs, wav_lens)
                 # {N, C, T} -> {T, N, C}
                 feas = feas.permute(2, 0, 1).contiguous()
             else:

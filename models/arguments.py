@@ -18,8 +18,8 @@ def parse_args():
     parser.add_argument("--toml_path", type=str, default="../configs/rnnt.toml",
         help="rnn-t model parameters config")
     parser.add_argument("--model_path", type=str, default="work_dir/rnnt.pt")
-    parser.add_argument("--preprocessor_path", type=str,
-        default="work_dir/preprocesspr.pt")
+    parser.add_argument("--processor_path", type=str,
+        default="work_dir/processpr.pt")
     parser.add_argument("--manifest_path", type=str, required=True)
     parser.add_argument("--infer_dataset_dir", type=str)
     parser.add_argument("--calib_dataset_dir", type=str)
@@ -31,8 +31,8 @@ def parse_args():
         help="enable bf16 for prediction & joint")
     parser.add_argument("--load_jit", action="store_true", help="load jit model")
     parser.add_argument("--save_jit", action="store_true", help="save jit model")
-    parser.add_argument("--enable_preprocess", action="store_true",
-        help="enable audio preprocess")
+    parser.add_argument("--enable_process", action="store_true",
+        help="enable audio process")
     parser.add_argument("--accuracy", action="store_true",
         help="enable accuracy evaluation")
     parser.add_argument("--benchmark", action="store_true",

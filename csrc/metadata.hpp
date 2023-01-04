@@ -14,7 +14,7 @@ static const std::vector<char> LABELS = {
   ' ', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n',
   'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '\''};
 
-enum {
+enum Params {
   PRE_NUM_LAYERS = 2,
   POST_NUM_LAYERS = 3,
   TRANS_INPUT_SIZE = 240,
@@ -33,7 +33,7 @@ enum {
 };
 
 
-// for Offline: batch ahead, split ahead
+// for Offline: batch ahead
 class State {
 public:
   State() {};
@@ -66,11 +66,11 @@ public:
   at::Tensor finish_idx_;
   at::Tensor remain_lens_;
   at::Tensor infer_lens_;
-  int32_t split_idx = 0;
+  int32_t split_idx_ = 0;
 };
 
 
-// for Server: dynamic batch, dynamic split
+// for Server: batch dynamic
 class PipelineState: public State {
 public:
   PipelineState();
@@ -91,6 +91,8 @@ public:
   // transcription
   at::Tensor F_;
   at::Tensor F_lens_;
+  // infer index
+  at::Tensor split_idx_;
 };
 
 }  // namespace rnnt

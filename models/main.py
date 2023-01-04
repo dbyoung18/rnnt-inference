@@ -31,10 +31,10 @@ def main():
     if args.save_jit:
         sut = PytorchSUT(args.model_path, args.calib_dataset_dir, args.batch_size, args.run_mode, args)
         suffix = f"_{args.run_mode}_jit" if args.save_jit else f"_{args.run_mode}"
-        if args.enable_preprocess:
-            print("==> JIT audio preprocessor...")
-            args.preprocessor_path = os.path.join(os.path.dirname(args.model_path), "preprocessor_jit.pt")
-            torch.jit.save(sut.preprocessor, args.preprocessor_path)
+        if args.enable_process:
+            print("==> JIT audio processor...")
+            args.processor_path = os.path.join(os.path.dirname(args.model_path), "processor_jit.pt")
+            torch.jit.save(sut.processor, args.processor_path)
 
         print("==> JIT model...")
         args.model_path = os.path.join(os.path.dirname(args.model_path), f"rnnt{suffix}.pt")

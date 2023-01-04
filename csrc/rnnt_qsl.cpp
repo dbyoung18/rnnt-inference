@@ -5,6 +5,7 @@
 #include <cassert>
 #include "rnnt_qsl.hpp"
 
+namespace rnnt {
 namespace qsl {
 TensorList RNNTQuerySampleLibrary::GetTensorListFrom(
     at::IValue value) {
@@ -144,7 +145,7 @@ Queue_t RNNTQuerySampleLibrary::Sort(
 // Assemble samples into larger batch
 //
 Stack RNNTQuerySampleLibrary::AssembleSamples(
-    std::vector<QuerySampleIndex> indices, bool preprocessor) const {
+    std::vector<QuerySampleIndex> indices, bool processor) const {
   long batch_size = indices.size();
   TensorList x_lens_list;
   x_lens_list.reserve(batch_size);
@@ -155,7 +156,7 @@ Stack RNNTQuerySampleLibrary::AssembleSamples(
   auto maxLength = at::max(x_lens).item().toLong();
   at::Tensor x;
   auto tmp_idx = indices[0];
-  if (preprocessor)
+  if (processor)
     x = at::zeros({batch_size, maxLength}, x_set_[tmp_idx].options());
   else
     x = at::zeros({maxLength, batch_size, x_set_[tmp_idx].size(1)}, x_set_[tmp_idx].options());
@@ -165,7 +166,7 @@ Stack RNNTQuerySampleLibrary::AssembleSamples(
     auto index = indices[i];
     auto xi = x_set_[index];
     auto len = xi.size(0);
-    if (preprocessor) {
+    if (processor) {
       x.narrow(0, i, 1).narrow(1, 0, len).copy_(xi);
     } else {
       x.index_put_({at::indexing::Slice(0, len), i, "..."}, xi);
@@ -174,4 +175,5 @@ Stack RNNTQuerySampleLibrary::AssembleSamples(
   return Stack {x, x_lens};
 }
 
-}
+}  // namespace qsl
+}  // namespace rnnt

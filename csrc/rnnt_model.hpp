@@ -7,10 +7,10 @@
 #include "rnnt_qsl.hpp"
 #include "metadata.hpp"
 
+namespace rnnt {
 namespace models {
 using Module = torch::jit::script::Module;
 using namespace torch::indexing;
-using namespace rnnt;
 
 struct RNNT {
   Module transcription;
@@ -104,4 +104,5 @@ private:
   RNNT socket_model_[2];
 };
 
-}
+}  // namespace models
+}  // namespace rnnt

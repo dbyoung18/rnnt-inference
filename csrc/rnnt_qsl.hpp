@@ -7,6 +7,7 @@
 #include <torch/csrc/jit/serialization/import_read.h>
 #include <query_sample_library.h>
 
+namespace rnnt {
 namespace qsl {
 using namespace mlperf;
 using TensorList = std::vector<at::Tensor>;
@@ -56,7 +57,7 @@ public:
     };
   }
 
-  Stack AssembleSamples(std::vector<QuerySampleIndex> indices, bool preprocessor = true) const;
+  Stack AssembleSamples(std::vector<QuerySampleIndex> indices, bool processor = true) const;
 
   // List of tensor of 1d
   // size_t GetFeatureLength(size_t index) const {
@@ -88,4 +89,5 @@ private:
   size_t maxLength;
 };
 
-}
+}  // namespace qsl
+}  // namespace rnnt
