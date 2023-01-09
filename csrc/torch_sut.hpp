@@ -131,6 +131,7 @@ public:
       int pre_batch_size,
       int batch_size,
       int split_len = -1,
+      int response_size = -1,
       const std::string test_scenario = "Server",
       bool processor = true,
       const std::string& profiler_foler = "",
@@ -150,6 +151,7 @@ private:
   int nProcessors_;
   // Control over max samples a instance will peek
   size_t mProThreshold_;
+  size_t mResponseThreshold_;
   moodycamel::BlockingConcurrentQueue<std::tuple<mlperf::QuerySample, at::Tensor, at::Tensor>> mQueueProcessed_;
   bool pipeline_flag_= true;
   bool finish_processor_ = false;

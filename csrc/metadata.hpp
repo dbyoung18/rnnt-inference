@@ -37,6 +37,9 @@ enum Params {
 class State {
 public:
   State() {};
+  State(int32_t batch_size, int32_t split_len = -1) {
+    init(batch_size, split_len);
+  };
   virtual ~State() = default;
   void init(int32_t batch_size, int32_t split_len = -1);
   void update(at::Tensor x, at::Tensor x_lens, int32_t split_len = -1);
@@ -74,7 +77,10 @@ public:
 class PipelineState: public State {
 public:
   PipelineState();
-  PipelineState(int32_t batch_size): finish_size_(batch_size) {};
+  PipelineState(int32_t batch_size, int32_t split_len, int32_t response_size):
+      finish_size_(batch_size), response_size_(response_size) {
+    init(batch_size, split_len);
+  };
   virtual ~PipelineState() = default;
   void init(int32_t batch_size, int32_t split_len = -1);
   void update(
@@ -84,6 +90,7 @@ public:
   bool next();
 
   int32_t finish_size_;
+  int32_t response_size_;
   int32_t stop_size_;
   int32_t remain_size_ = 0;  // remain_size_ = finish_size_ - padded_size_
   int32_t dequeue_size_ = 0;

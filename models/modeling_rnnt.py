@@ -236,10 +236,10 @@ class Joint(torch.nn.Module):
             # TODO: enable 1dnn bf16 for last layer
             # y = P.linear(y, self.linear2.weight, self.linear2.bias, None, None)
             # y = torch.matmul(y, self.linear2.weight) + self.linear2.bias
-            remainder = y.shape[0] % 128
+            BS = 128
+            remainder = y.shape[0] % BS
             if remainder != 0:
-                pad_size = (0, 0, 0, 128 - remainder)
-                y = F.pad(y, pad_size, "constant", 0.0)
+                y = F.pad(y, (0, 0, 0, BS - remainder), "constant", 0.0)
             y = P.amx_linear_i16o32(y, self.linear2.weight, self.linear2.bias)
             if remainder != 0:
                 y = y[:remainder, ...]

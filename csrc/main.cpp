@@ -45,6 +45,9 @@ int main(int argc, char **argv) {
            {"split_len", "Sequence split len",
             cxxopts::value<int>()->default_value("-1")},
 
+           {"response_size", "Minimum response size for Server early-response",
+            cxxopts::value<int>()->default_value("-1")},
+
            {"k,test_scenario", "Test scenario [Offline, Server]",
             cxxopts::value<std::string>()->default_value("Offline")},
 
@@ -84,6 +87,7 @@ int main(int argc, char **argv) {
   auto pre_batch_size = parsed_opts["pre_batch_size"].as<int>();
   auto batch_size = parsed_opts["batch_size"].as<int>();
   auto split_len = parsed_opts["split_len"].as<int>();
+  auto response_size = parsed_opts["response_size"].as<int>();
   auto test_scenario = parsed_opts["test_scenario"].as<std::string>();
   auto processor_flag = parsed_opts["processor"].as<bool>();
   auto profiler_folder = parsed_opts["profiler_folder"].as<std::string>();
@@ -124,7 +128,7 @@ int main(int argc, char **argv) {
     rnnt::ServerSUT sut(
       sample_file, model_file, processor_file,
       pre_parallel, inter_parallel, intra_parallel,
-      pre_batch_size, batch_size, split_len,
+      pre_batch_size, batch_size, split_len, response_size,
       test_scenario, processor_flag,
       profiler_folder, profiler_iter, warmup_iter);
 

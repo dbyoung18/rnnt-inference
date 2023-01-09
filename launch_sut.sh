@@ -6,6 +6,7 @@ export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:per
 
 : ${BS:=128}
 : ${LEN:=-1}
+: ${RESPONSE:=-1}
 : ${PRE_BS:=32}
 : ${PRE_INTRA:=8}
 : ${INTER:=28}
@@ -32,8 +33,7 @@ if [[ ${SCENARIO} == "Offline" ]]; then
 elif [[ ${SCENARIO} == "Server" ]]; then
   num_instance=${INTER}
   core_per_instance=${INTRA}
-  # batch_size=${BS}
-  batch_size=64
+  batch_size=${BS}
 fi
 
 SCRIPT_ARGS=" --test_scenario=${SCENARIO}"
@@ -54,7 +54,7 @@ else
 fi
 
 if [[ ${SCENARIO} == "Server" ]]; then
-  SCRIPT_ARGS+=" --pre_parallel ${PRE_INTRA} --pre_batch_size ${PRE_BS}"
+  SCRIPT_ARGS+=" --pre_parallel ${PRE_INTRA} --pre_batch_size ${PRE_BS} --response_size ${RESPONSE}"
 fi
 if [[ ${ACCURACY} == true ]]; then
   SCRIPT_ARGS+=" --accuracy"

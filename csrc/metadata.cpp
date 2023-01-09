@@ -100,11 +100,10 @@ void PipelineState::update (
     std::vector<std::tuple<mlperf::QuerySample, at::Tensor, at::Tensor>> &dequeue_list,
     std::vector<mlperf::QuerySample> &samples,
     int32_t dequeue_size, int32_t split_len) {
-  // currently ensure at least BS64!
-  dequeue_size_ = dequeue_size;
-  auto batch_size = (dequeue_size > 64) ? dequeue_size : 64;
-  if (batch_size != batch_size_)
-    PipelineState::init(batch_size, split_len);
+  // currently use fixed batch_size!
+  // auto batch_size = (dequeue_size > batch_size_) ? dequeue_size : batch_size_;
+  // if (batch_size != batch_size_)
+  //   PipelineState::init(batch_size, split_len);
   // update transcription tensors
   auto trans_state_mask = finish_idx_.unsqueeze(1).expand({batch_size_, TRANS_HIDDEN_SIZE});
   for (int32_t layer = 0; layer < PRE_NUM_LAYERS; ++layer) {
@@ -150,9 +149,8 @@ void PipelineState::update (
     f_split_ = torch::split(F_, split_len_);
     infer_lens_.zero_();
     split_idx_.masked_fill_(finish_idx_, 0);
-    // stop_size_ = batch_size_;
-    stop_size_ = std::min(batch_size_, padded_size_ + 1);
     finish_size_ = padded_size_;
+    stop_size_ = std::min(batch_size_, padded_size_ + response_size_);
   }
 }
 

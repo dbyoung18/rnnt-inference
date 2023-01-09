@@ -278,6 +278,7 @@ ServerSUT::ServerSUT(
     int pre_batch_size,
     int batch_size,
     int split_len,
+    int response_size,
     std::string test_scenario,
     bool processor,
     const std::string& profiler_folder,
@@ -287,6 +288,8 @@ ServerSUT::ServerSUT(
       inter_parallel, intra_parallel, batch_size, split_len,
       test_scenario, processor, profiler_folder, profiler_iter, warmup_iter),
       nProcessors_(pre_parallel), mProThreshold_(pre_batch_size), mQueueProcessed_(3000) {
+
+  mResponseThreshold_ = (response_size == -1) ? mThreshold_ : response_size;
 
   // Verify nInstance_
   if ((nThreadsPerInstance_ * nInstances_ + pipeline_flag_ * nProcessors_) > (nMaxThread_ / (mHt_+1)))
@@ -419,7 +422,7 @@ void ServerSUT::thInstanceConsumer(int index) {
     int32_t dequeue_size;
 
     std::vector<mlperf::QuerySample> samples(mThreshold_);
-    rnnt::PipelineState state (mThreshold_);
+    rnnt::PipelineState state (mThreshold_, split_len_, mResponseThreshold_);
 
     while (true) {
       auto start = std::chrono::high_resolution_clock::now();
@@ -474,7 +477,8 @@ void ServerSUT::warmup(int which, int warmup_iter, int worker_type) {
   long batch_size = (long)mThreshold_;
   at::Tensor wav, wav_lens;
   at::Tensor fea, fea_lens;
-  auto state = (test_scenario_ == "Server") ? rnnt::State() : rnnt::PipelineState(batch_size);
+  auto state = (test_scenario_ == "Server") ? rnnt::State(mThreshold_, split_len_)
+      : rnnt::PipelineState(mThreshold_, split_len_, mResponseThreshold_);
   for (int i = 0; i < warmup_iter; ++i) {
     switch (worker_type) {
       case Producer:
