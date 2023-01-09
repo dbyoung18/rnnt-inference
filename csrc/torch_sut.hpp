@@ -122,13 +122,14 @@ class ServerSUT : public OfflineSUT {
 public:
   // configure inter parallel and intra paralel
   ServerSUT (
-      const std::string& model_file,
       const std::string& samples_file,
+      const std::string& model_file,
       const std::string& processor_file,
-      int pre_parallel,
+      int pro_inter_parallel,
+      int pro_intra_parallel,
       int inter_parallel,
       int intra_parallel,
-      int pre_batch_size,
+      int pro_batch_size,
       int batch_size,
       int split_len = -1,
       int response_size = -1,
@@ -148,7 +149,8 @@ public:
       const at::Tensor& finish_idx);
 
 private:
-  int nProcessors_;
+  int nProducers_;
+  int nThreadsPerProducer_;
   // Control over max samples a instance will peek
   size_t mProThreshold_;
   size_t mResponseThreshold_;

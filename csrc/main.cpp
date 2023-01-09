@@ -27,25 +27,28 @@ int main(int argc, char **argv) {
            {"processor_file", "Audio Processor File",
             cxxopts::value<std::string>()},
 
-           {"pre_parallel", "Instance Number of processor(pipeline mode only)",
+           {"pro_inter_parallel", "Instance Number of Producer(Server)",
+            cxxopts::value<int>()->default_value("1")},
+
+           {"pro_intra_parallel", "Thread Number per Producer(Server)",
             cxxopts::value<int>()->default_value("8")},
 
            {"n,inter_parallel", "Instance Number",
             cxxopts::value<int>()->default_value("1")},
 
-           {"j,intra_parallel", "Thread Number Per-Instance",
+           {"j,intra_parallel", "Thread Number per Instance/Consumer(Server)",
             cxxopts::value<int>()->default_value("4")},
 
-           {"pre_batch_size", "Processor batch size",
+           {"pro_batch_size", "Producer batch size(Server)",
             cxxopts::value<int>()->default_value("32")},
 
-           {"b,batch_size", "Offline Model Batch Size",
+           {"b,batch_size", "Model Batch Size",
             cxxopts::value<int>()->default_value("1")},
 
            {"split_len", "Sequence split len",
             cxxopts::value<int>()->default_value("-1")},
 
-           {"response_size", "Minimum response size for Server early-response",
+           {"response_size", "Minimum response size for early-response(Server)",
             cxxopts::value<int>()->default_value("-1")},
 
            {"k,test_scenario", "Test scenario [Offline, Server]",
@@ -81,10 +84,11 @@ int main(int argc, char **argv) {
   auto sample_file = parsed_opts["sample_file"].as<std::string>();
   auto model_file = parsed_opts["model_file"].as<std::string>();
   auto processor_file = parsed_opts["processor_file"].as<std::string>();
-  auto pre_parallel = parsed_opts["pre_parallel"].as<int>();
+  auto pro_inter_parallel = parsed_opts["pro_inter_parallel"].as<int>();
+  auto pro_intra_parallel = parsed_opts["pro_intra_parallel"].as<int>();
   auto inter_parallel = parsed_opts["inter_parallel"].as<int>();
   auto intra_parallel = parsed_opts["intra_parallel"].as<int>();
-  auto pre_batch_size = parsed_opts["pre_batch_size"].as<int>();
+  auto pro_batch_size = parsed_opts["pro_batch_size"].as<int>();
   auto batch_size = parsed_opts["batch_size"].as<int>();
   auto split_len = parsed_opts["split_len"].as<int>();
   auto response_size = parsed_opts["response_size"].as<int>();
@@ -127,8 +131,8 @@ int main(int argc, char **argv) {
   } else {
     rnnt::ServerSUT sut(
       sample_file, model_file, processor_file,
-      pre_parallel, inter_parallel, intra_parallel,
-      pre_batch_size, batch_size, split_len, response_size,
+      pro_inter_parallel, pro_intra_parallel, inter_parallel, intra_parallel,
+      pro_batch_size, batch_size, split_len, response_size,
       test_scenario, processor_flag,
       profiler_folder, profiler_iter, warmup_iter);
 

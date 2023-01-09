@@ -272,10 +272,11 @@ ServerSUT::ServerSUT(
     const std::string& sample_file,
     const std::string& model_file,
     const std::string& processor_file,
-    int pre_parallel,
+    int pro_inter_parallel,
+    int pro_intra_parallel,
     int inter_parallel,
     int intra_parallel,
-    int pre_batch_size,
+    int pro_batch_size,
     int batch_size,
     int split_len,
     int response_size,
@@ -287,16 +288,18 @@ ServerSUT::ServerSUT(
   ) : OfflineSUT(sample_file, model_file, processor_file,
       inter_parallel, intra_parallel, batch_size, split_len,
       test_scenario, processor, profiler_folder, profiler_iter, warmup_iter),
-      nProcessors_(pre_parallel), mProThreshold_(pre_batch_size), mQueueProcessed_(3000) {
+      nProducers_(pro_inter_parallel), nThreadsPerProducer_(pro_intra_parallel),
+      mProThreshold_(pro_batch_size), mQueueProcessed_(3000) {
 
   mResponseThreshold_ = (response_size == -1) ? mThreshold_ : response_size;
 
   // Verify nInstance_
-  if ((nThreadsPerInstance_ * nInstances_ + pipeline_flag_ * nProcessors_) > (nMaxThread_ / (mHt_+1)))
-    nInstances_ = (nMaxThread_ / (mHt_ + 1) - pipeline_flag_ * nProcessors_) / nThreadsPerInstance_;
+  if ((nProducers_ * nThreadsPerProducer_ + nInstances_ * nThreadsPerInstance_) > (nMaxThread_ / (mHt_+1)))
+    nInstances_ = (nMaxThread_ / (mHt_ + 1) - nProducers_ * nThreadsPerProducer_) / nThreadsPerInstance_;
 
   // Construct instances
-  mInstances_.emplace_back(&ServerSUT::thInstanceProducer, this, 0);
+  for (int i = 0; i < nProducers_; ++ i)
+    mInstances_.emplace_back(&ServerSUT::thInstanceProducer, this, i);
   for (int i = 0; i < nInstances_; ++ i)
     mInstances_.emplace_back(&ServerSUT::thInstanceConsumer, this, i);
 
@@ -309,13 +312,13 @@ int ServerSUT::rootProc(int index, int worker_type) {
   std::string type_name;
   switch (worker_type) {
     case Producer:
-      root = nMaxThread_ - nProcessors_;
-      core_end = root + nProcessors_ - 1;
+      root = nMaxThread_ - nThreadsPerProducer_;
+      core_end = root + nThreadsPerProducer_ - 1;
       type_name = "Producer";
       break;
     case Consumer:
-      part[0] = nMaxThread_ - pipeline_flag_ * nProcessors_;
-      part[1] = nMaxThread_ * (2 + (int)mHt_) / 4 - pipeline_flag_ * (nProcessors_ / 2);
+      part[0] = nMaxThread_ - pipeline_flag_ * nProducers_ * nThreadsPerProducer_;
+      part[1] = nMaxThread_ * (2 + (int)mHt_) / 4 - pipeline_flag_ * (nProducers_ * nThreadsPerProducer_ / 2);
       select = index & 1;
       root = part[select] - nThreadsPerInstance_ * ((index >> 1) + 1);
       core_end = root + nThreadsPerInstance_ - 1;
@@ -336,11 +339,11 @@ void ServerSUT::thInstanceProducer(int index) {
   at::NoGradGuard no_grad;
 
   kmp::KMPLauncher thCtrl;
-  std::vector<int> places (nProcessors_);
+  std::vector<int> places (nThreadsPerProducer_);
   auto root = rootProc(index, Producer);
   auto which = index & 1;
 
-  for (int i = 0; i < nProcessors_; ++ i)
+  for (int i = 0; i < nThreadsPerProducer_; ++i)
     places[i] = (root + i);
 
   thCtrl.setAffinityPlaces(places).pinThreads();
@@ -399,7 +402,7 @@ void ServerSUT::thInstanceConsumer(int index) {
   auto root = rootProc(index, Consumer);
   auto which = index & 1;
 
-  for (int i = 0; i < nThreadsPerInstance_; ++ i)
+  for (int i = 0; i < nThreadsPerInstance_; ++i)
     places[i] = (root + i);
 
   thCtrl.setAffinityPlaces(places).pinThreads();

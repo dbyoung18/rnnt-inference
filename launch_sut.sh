@@ -7,8 +7,9 @@ export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:per
 : ${BS:=128}
 : ${LEN:=-1}
 : ${RESPONSE:=-1}
-: ${PRE_BS:=32}
-: ${PRE_INTRA:=8}
+: ${PRO_BS:=32}
+: ${PRO_INTER:=1}
+: ${PRO_INTRA:=8}
 : ${INTER:=28}
 : ${INTRA:=4}
 : ${SCENARIO=${2:-"Offline"}}
@@ -23,7 +24,7 @@ export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:per
 SUT_DIR=$(pwd)
 EXECUTABLE=${SUT_DIR}/build/rnnt_inference
 WORK_DIR=${SUT_DIR}/mlperf-rnnt-librispeech
-OUT_DIR="${SUT_DIR}/logs/${SCENARIO}_${VERSION}_${WAV}_PBS${PRE_BS}_BS${BS}_${PRE_INTRA}_${INTER}_${INTRA}_SL${LEN}"
+OUT_DIR="${SUT_DIR}/logs/${SCENARIO}_${VERSION}_${WAV}_PBS${PRO_BS}_BS${BS}_${PRO_INTER}_${PRO_INTRA}_${INTER}_${INTRA}_SL${LEN}"
 mkdir -p ${OUT_DIR} ${WORK_DIR}
 
 if [[ ${SCENARIO} == "Offline" ]]; then
@@ -54,12 +55,12 @@ else
 fi
 
 if [[ ${SCENARIO} == "Server" ]]; then
-  SCRIPT_ARGS+=" --pre_parallel ${PRE_INTRA} --pre_batch_size ${PRE_BS} --response_size ${RESPONSE}"
+  SCRIPT_ARGS+=" --pro_inter_parallel=${PRO_INTER} --pro_intra_parallel=${PRO_INTRA} --pro_batch_size=${PRO_BS} --response_size=${RESPONSE}"
 fi
 if [[ ${ACCURACY} == true ]]; then
   SCRIPT_ARGS+=" --accuracy"
 else
-  SCRIPT_ARGS+=" --profiler_iter ${PROFILE}"
+  SCRIPT_ARGS+=" --profiler_iter=${PROFILE}"
 fi
 
 [ ${DEBUG} != false ]  && EXECUTABLE=${SUT_DIR}/build_dbg/rnnt_inference
