@@ -6,7 +6,9 @@
 #include <algorithm>
 #include <condition_variable>
 #include <type_traits>
+#include <issue_query_controller.h>
 #include <loadgen.h>
+#include <logging.h>
 #include <query_sample.h>
 #include <iostream>
 #include <fstream>
@@ -21,6 +23,14 @@ void sleep_thread(int duration) {
   using namespace std::chrono_literals;
   std::this_thread::sleep_for(std::chrono::milliseconds(duration));
   return;
+}
+
+long get_duration(const mlperf::QuerySample& sample) {
+  mlperf::PerfClock::time_point timestamp = mlperf::PerfClock::now();
+  mlperf::loadgen::SampleMetadata* sample_metadata = reinterpret_cast<mlperf::loadgen::SampleMetadata*>(sample.id);
+  mlperf::loadgen::QueryMetadata* query_metadata = sample_metadata->query_metadata;
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(timestamp - query_metadata->scheduled_time).count();
+  return duration;
 }
 
 namespace rnnt{
@@ -115,7 +125,6 @@ void OfflineSUT::thInstance(int index) {
     size_t nIteration = 0;
     rnnt::State state;
     while (true) {
-      // auto start = std::chrono::high_resolution_clock::now();
       // critical section
       {
         std::unique_lock<std::mutex> l(mtx_);
@@ -155,11 +164,8 @@ void OfflineSUT::thInstance(int index) {
 
       QuerySamplesComplete(samples, state);
 
-      // auto end = std::chrono::high_resolution_clock::now();
-      // std::chrono::duration<double, std::milli> elapsed = end - start;
-      // std::cout << "Warmup done. cost:" << elapsed.count() << std::endl;
-
       nIteration += 1;
+      // std::cout << "finish iteration " << nIteration << ", cost:" << get_duration(samples[0]) << " ms\n";
       if (profiler_iter_ != -1 && nIteration >= profiler_iter_)
         guard_->~ProfileRecord();
     }
@@ -389,7 +395,7 @@ void ServerSUT::thInstanceProducer(int index) {
       }
       // std::cout << "Producer worker " << index << "::process size " << snippet.size()
       //     << ", current queue size: " << mQueueProcessed_.size_approx() << std::endl << std::flush;
-      if (mQueue_.empty()) finish_processor_ = true;
+      // if (mQueue_.empty()) finish_produce_ = true;
     }
   }
 }
@@ -428,46 +434,45 @@ void ServerSUT::thInstanceConsumer(int index) {
     rnnt::PipelineState state (mThreshold_, split_len_, mResponseThreshold_);
 
     while (true) {
-      auto start = std::chrono::high_resolution_clock::now();
       std::vector<std::tuple<mlperf::QuerySample, at::Tensor, at::Tensor>> dequeue_list(mThreshold_);
       dequeue_size = 0;
 
       bool finish_dequeue = false;
       while (!mStop_ && dequeue_size == 0 && !finish_dequeue) {
-        if (finish_processor_ && mQueueProcessed_.size_approx() == 0) {
+        if (finish_produce_ && mQueueProcessed_.size_approx() == 0) {
           finish_dequeue = true;
           break;
         }
         dequeue_size = mQueueProcessed_.wait_dequeue_bulk_timed(dequeue_list.begin(), state.finish_size_, 0); 
       }
 
-      if (mStop_ || (finish_dequeue && state.remain_size_ == 0)) break;
+      if (mStop_ || (finish_dequeue && state.remain_size_ == 0)) {
+        std::cout << "Consumer worker " << index << " finish iteration " << nIteration << std::endl << std::flush;
+        break;
+      }
 
       // std::cout << "Consumer worker " << index << "::start server iteration " << nIteration
       //     << ", dequeue(" << dequeue_size << ")/require(" << state.finish_size_ << ")"
       //     << ", current queue size: " << mQueueProcessed_.size_approx() << std::endl << std::flush;
 
       state.update(dequeue_list, samples, dequeue_size, split_len_);
-      auto last_remain_size = state.remain_size_;
       // std::cout << "finish update" << std::endl << std::flush;
       inferEncoder(which, state);
       // std::cout << "finish encoder" << std::endl << std::flush;
       inferDecoder(which, state);
       // std::cout << "finish decoder" << std::endl << std::flush;
 
-      QuerySamplesComplete(samples, state, state.finish_idx_);
+      QuerySamplesComplete(samples, state, state.finish_idx_, index);
       // std::cout << "finish response" << std::endl << std::flush;
 
       if (profiler_iter_ != -1 && nIteration >= profiler_iter_)
         guard_->~ProfileRecord();
 
-      auto end = std::chrono::high_resolution_clock::now();
-      std::chrono::duration<double, std::milli> elapsed = end - start;
-      std::cout << "Consumer worker " << index << "::finish iteration " << nIteration << ", "
-          << "bs(" << state.batch_size_ << ")=finish(" << state.finish_size_ << ")+remain(" << state.remain_size_
-          << ")=last_remain(" << last_remain_size << ")+dequeue(" << state.dequeue_size_ << ")+padded(" << state.padded_size_ << ")"
-          << ", infer model cost: " << elapsed.count() << "ms"
-          << ", current queue size: " << mQueueProcessed_.size_approx() << std::endl << std::flush;
+      // auto last_remain_size = state.batch_size_ - state.dequeue_size_ - state.padded_size_;
+      // std::cout << "Consumer worker " << index << "::finish iteration " << nIteration << ", "
+      //     << "bs(" << state.batch_size_ << ")=finish(" << state.finish_size_ << ")+remain(" << state.remain_size_
+      //     << ")=last_remain(" << last_remain_size << ")+dequeue(" << state.dequeue_size_ << ")+padded(" << state.padded_size_ << ")"
+      //     << ", current queue size: " << mQueueProcessed_.size_approx() << std::endl << std::flush;
 
       // dequeue_list.clear();
       nIteration += 1;
@@ -509,7 +514,8 @@ void ServerSUT::warmup(int which, int warmup_iter, int worker_type) {
 void ServerSUT::QuerySamplesComplete(
     const std::vector<mlperf::QuerySample>& samples,
     const rnnt::PipelineState& state,
-    const at::Tensor& finish_idx) {
+    const at::Tensor& finish_idx,
+    int index) {
   std::vector<mlperf::QuerySampleResponse> responses(state.finish_size_ - state.padded_size_);
   auto res_lens = state.res_idx_ + 1;
 
@@ -517,11 +523,12 @@ void ServerSUT::QuerySamplesComplete(
   for (size_t i = 0; i < samples.size(); ++i) {
     auto res_len = res_lens[i].item().toInt();
     if (finish_idx[i].item().toBool() && state.F_lens_[i].item().toInt() > 0) {
-      // std::cout << samples[i].index << "::" << models::TorchModel::sequence_to_string(state.res_[i], res_len) << std::endl << std::flush;
       responses[j].id = samples[i].id;
       responses[j].data = reinterpret_cast<uintptr_t>(state.res_[i].data_ptr());
       responses[j].size = res_len * 4;
       ++j;
+      // std::cout << samples[i].index << "::" << models::TorchModel::sequence_to_string(state.res_[i], res_len) << std::endl << std::flush;
+      std::cout << "Consumer worker " << index << " finish sample " << samples[i].id << ", cost " << get_duration(samples[i]) << " ms\n" << std::flush;
     }
   }
   mlperf::QuerySamplesComplete(responses.data(), responses.size());

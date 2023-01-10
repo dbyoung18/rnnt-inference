@@ -146,7 +146,13 @@ public:
   void QuerySamplesComplete(
       const std::vector<mlperf::QuerySample>& samples,
       const rnnt::PipelineState& state,
-      const at::Tensor& finish_idx);
+      const at::Tensor& finish_idx,
+      const int index);
+
+  void FlushQueries() override {
+    finish_produce_ = true;
+    std::cout << "finish produce" << std::endl << std::flush;
+  }
 
 private:
   int nProducers_;
@@ -156,7 +162,7 @@ private:
   size_t mResponseThreshold_;
   moodycamel::BlockingConcurrentQueue<std::tuple<mlperf::QuerySample, at::Tensor, at::Tensor>> mQueueProcessed_;
   bool pipeline_flag_= true;
-  bool finish_processor_ = false;
+  bool finish_produce_ = false;
 
   void warmup(int which, int warmup_iter, int worker_type);
   void thInstanceProducer(int index);

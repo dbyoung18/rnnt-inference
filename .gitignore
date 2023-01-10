@@ -12,6 +12,7 @@ third_party/
 **/*.log
 **/*.pt
 **/*.swp
+**/*.txt
 .vscode
 .gdb_history
 *.patch
