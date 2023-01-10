@@ -131,8 +131,8 @@ class FilterbankFeatures(nn.Module):
                                   periodic=False).float() if window_fn else None
         filterbanks = torch.tensor(
             librosa.filters.mel(sr=sample_rate, n_fft=self.n_fft, n_mels=nfilt, fmin=lowfreq,
-                                fmax=highfreq), dtype=torch.float).unsqueeze(0)
-        fb_bias = torch.zeros((1, IN_FEAT, 1))
+                                fmax=highfreq), dtype=torch.float).unsqueeze(0).expand(BATCH_SIZE, -1, -1).contiguous()
+        fb_bias = torch.zeros((BATCH_SIZE, IN_FEAT, 1))
         if self.dither > 0 and self.use_deterministic_dithering:
             fb_bias += self.dither ** 2
         if self.log:
@@ -180,7 +180,8 @@ class FilterbankFeatures(nn.Module):
         # if self.dither > 0 and self.use_deterministic_dithering:
             # x = x + self.dither ** 2
         # dot with filterbank energies
-        x = torch.baddbmm(self.fb_bias.expand(x.shape[0], -1, -1), self.fb.expand(x.shape[0], -1, -1), x)
+        actual_bs = x.shape[0]
+        x = torch.baddbmm(self.fb_bias[:actual_bs], self.fb[:actual_bs], x)
 
         # log features if required
         if self.log:
