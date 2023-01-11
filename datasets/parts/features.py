@@ -159,6 +159,7 @@ class FilterbankFeatures(nn.Module):
     @torch.no_grad()
     def forward(self, x: torch.Tensor, x_lens: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         x_lens = self.get_seq_len(x_lens)
+        actual_bs = x.shape[0]
 
         # dither
         if self.dither > 0 and not self.use_deterministic_dithering:
@@ -172,15 +173,20 @@ class FilterbankFeatures(nn.Module):
             x, n_fft=self.n_fft, hop_length=self.hop_length,
             win_length=self.win_length,
             center=False, window=self.window,
-            return_complex=True)
+            return_complex=False)
+        actual_freq = x.shape[1]
+        actual_out_len = x.shape[2]
+        x = x.permute(0, 2, 1, 3)
+        x = x.view(actual_bs, actual_freq * actual_out_len, 2)
 
         # get power spectrum
-        x = x.abs().square()
+        x = torch.ops.intel_mlperf.power_spectrum(x)
+        x = x.reshape(actual_bs, actual_out_len, actual_freq).permute(0, 2, 1)
 
         # if self.dither > 0 and self.use_deterministic_dithering:
             # x = x + self.dither ** 2
         # dot with filterbank energies
-        actual_bs = x.shape[0]
+        # fb(N, IN_FEAT, FREQ) * x(N, FREQ, OUT_LEN * 3)
         x = torch.baddbmm(self.fb_bias[:actual_bs], self.fb[:actual_bs], x)
 
         # log features if required
