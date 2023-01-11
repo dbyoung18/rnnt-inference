@@ -42,11 +42,12 @@ public:
   };
   virtual ~State() = default;
   void init(int32_t batch_size, int32_t split_len = -1);
-  void update(at::Tensor x, at::Tensor x_lens, int32_t split_len = -1);
+  void update(at::Tensor x, at::Tensor x_lens, int32_t split_len = -1, int32_t actual_batch_size_ = -1);
   bool next();
   void clear();
 
   int32_t finish_size_;
+  int32_t actual_batch_size_;
   int32_t batch_size_;
   int32_t split_len_;
   at::Tensor split_lens_;

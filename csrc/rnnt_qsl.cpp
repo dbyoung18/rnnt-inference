@@ -145,10 +145,10 @@ Queue_t RNNTQuerySampleLibrary::Sort(
 // Assemble samples into larger batch
 //
 Stack RNNTQuerySampleLibrary::AssembleSamples(
-    std::vector<QuerySampleIndex> indices, bool processor) const {
-  long batch_size = indices.size();
+    std::vector<QuerySampleIndex> indices, bool processor, int padded_batch_size) const {
+  long actual_batch_size = indices.size();
   TensorList x_lens_list;
-  x_lens_list.reserve(batch_size);
+  x_lens_list.reserve(actual_batch_size);
   // Assemble x_lens
   for (auto index : indices)
     x_lens_list.emplace_back(x_lens_set_[index].to(at::kInt));
@@ -156,13 +156,15 @@ Stack RNNTQuerySampleLibrary::AssembleSamples(
   auto maxLength = at::max(x_lens).item().toLong();
   at::Tensor x;
   auto tmp_idx = indices[0];
-  if (processor)
-    x = at::zeros({batch_size, maxLength}, x_set_[tmp_idx].options());
-  else
-    x = at::zeros({maxLength, batch_size, x_set_[tmp_idx].size(1)}, x_set_[tmp_idx].options());
+  if (processor) {
+    x = at::zeros({actual_batch_size, maxLength}, x_set_[tmp_idx].options());
+  } else {
+    x = at::zeros({maxLength, padded_batch_size, x_set_[tmp_idx].size(1)}, x_set_[tmp_idx].options());
+    x_lens = at::pad(x_lens, {0, padded_batch_size - actual_batch_size}, "constant", 0);
+  }
 
   // Assemble x
-  for (auto i = 0; i < batch_size; ++i) {
+  for (auto i = 0; i < actual_batch_size; ++i) {
     auto index = indices[i];
     auto xi = x_set_[index];
     auto len = xi.size(0);

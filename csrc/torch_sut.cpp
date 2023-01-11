@@ -148,17 +148,21 @@ void OfflineSUT::thInstance(int index) {
       std::transform(samples.cbegin(), samples.cend(), indices.begin(),
           [](mlperf::QuerySample sample) {return sample.index;});
 
+      auto actual_batch_size = int(samples.size());
       at::Tensor fea, fea_lens;
-      auto input_stack = qsl_.AssembleSamples(std::move(indices), processor_flag_);
+      qsl::Stack input_stack;
       if (processor_flag_) {
+        input_stack = qsl_.AssembleSamples(std::move(indices), processor_flag_);
         std::tie(fea, fea_lens) = inferProcessor(which, input_stack);
         fea = fea.permute({2, 0, 1}).contiguous();
       } else {
+        auto padded_batch_size = (actual_batch_size < nThreadsPerInstance_ * 16) ? nThreadsPerInstance_ * 16 : nThreadsPerInstance_ * 32;
+        input_stack = qsl_.AssembleSamples(std::move(indices), processor_flag_, padded_batch_size);
         fea = input_stack[0].toTensor();
         fea_lens = input_stack[1].toTensor();
       }
 
-      state.update(fea, fea_lens, split_len_);
+      state.update(fea, fea_lens, split_len_, actual_batch_size);
       inferEncoder(which, state);
       inferDecoder(which, state);
 
@@ -250,7 +254,7 @@ void OfflineSUT::QuerySamplesComplete(
 void OfflineSUT::QuerySamplesComplete(
     const std::vector<mlperf::QuerySample>& samples,
     const rnnt::State& state) {
-  std::vector<mlperf::QuerySampleResponse> responses(samples.size());
+  std::vector<mlperf::QuerySampleResponse> responses(state.actual_batch_size_);
   auto res_lens = state.res_idx_ + 1;
 
   for (size_t i = 0; i < samples.size(); ++i) {

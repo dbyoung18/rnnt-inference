@@ -57,7 +57,7 @@ public:
     };
   }
 
-  Stack AssembleSamples(std::vector<QuerySampleIndex> indices, bool processor = true) const;
+  Stack AssembleSamples(std::vector<QuerySampleIndex> indices, bool processor = true, int padded_batch_size = 1) const;
 
   // List of tensor of 1d
   // size_t GetFeatureLength(size_t index) const {

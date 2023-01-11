@@ -28,10 +28,11 @@ void State::init (int32_t batch_size, int32_t split_len) {
   res_idx_ = torch::empty({batch_size_}, torch::kInt32);
 }
 
-void State::update (at::Tensor f, at::Tensor f_lens, int32_t split_len) {
-  auto batch_size = f_lens.size(0);
-  if (batch_size != batch_size_)
-    init(batch_size, split_len);
+void State::update (at::Tensor f, at::Tensor f_lens, int32_t split_len, int32_t actual_batch_size) {
+  actual_batch_size_ = actual_batch_size;
+  auto padded_batch_size = f_lens.size(0);
+  if (padded_batch_size != batch_size_)
+    init(padded_batch_size, split_len);
   // update transcription tensors
   for (int32_t layer = 0; layer < PRE_NUM_LAYERS; ++layer) {
     pre_hx_[layer].zero_();

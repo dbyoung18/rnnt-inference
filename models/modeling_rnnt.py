@@ -229,20 +229,12 @@ class Joint(torch.nn.Module):
           y: {N, T=1, U=1, K}
         """
         if self.enable_bf16:
+            y = P.amx_linear_bf16_accum_relu(f, self.linear1_trans.weight, g, self.linear1_pred.weight, self.linear1_bias)
+            y = P.amx_linear_i16o32(y, self.linear2.weight, self.linear2.bias)
             # y = P.linear(f, self.linear1_trans.weight, self.linear1_trans.bias, None, None)
             # y += P.linear(g, self.linear1_pred.weight, self.linear1_pred.bias, None, None)
             # y = self.relu(y)
-            y = P.amx_linear_bf16_accum_relu(f, self.linear1_trans.weight, g, self.linear1_pred.weight, self.linear1_bias)
-            # TODO: enable 1dnn bf16 for last layer
             # y = P.linear(y, self.linear2.weight, self.linear2.bias, None, None)
-            # y = torch.matmul(y, self.linear2.weight) + self.linear2.bias
-            BS = 128
-            remainder = y.shape[0] % BS
-            if remainder != 0:
-                y = F.pad(y, (0, 0, 0, BS - remainder), "constant", 0.0)
-            y = P.amx_linear_i16o32(y, self.linear2.weight, self.linear2.bias)
-            if remainder != 0:
-                y = y[:remainder, ...]
         else:
             y = self.linear1_trans(f)
             y += self.linear1_pred(g)

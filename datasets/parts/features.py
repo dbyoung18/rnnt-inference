@@ -197,7 +197,7 @@ class FilterbankFeatures(nn.Module):
         x = torch.ops.intel_mlperf.frame_splicing(x, self.frame_splicing)
 
         # normalize if required
-        x = torch.ops.intel_mlperf.i_layernorm_pad(
+        x, x_lens = torch.ops.intel_mlperf.i_layernorm_pad(
             x, self.norm_weight, self.norm_bias, x_lens, 1e-12, unbiased=1, output_shape=self.output_shape)
 
         return x, x_lens

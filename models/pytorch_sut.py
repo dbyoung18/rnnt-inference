@@ -28,6 +28,7 @@ class PytorchSUT:
         else:
             self.processor = None
         self.batch_size = batch_size
+        self.intra = torch.get_num_threads()
         # create model
         if run_mode == "quant":
             from modeling_rnnt import RNNT
@@ -57,6 +58,7 @@ class PytorchSUT:
             self.query_samples_complete(batch_samples, results, results_idx)
 
     def inference(self, batch_idx):
+        self.actual_batch_size = len(batch_idx)
         with torch.no_grad():
             if self.enable_process:
                 wavs = torch.nn.utils.rnn.pad_sequence(
@@ -67,16 +69,17 @@ class PytorchSUT:
                 # {N, C, T} -> {T, N, C}
                 feas = feas.permute(2, 0, 1).contiguous()
             else:
-                feas = torch.nn.utils.rnn.pad_sequence(
-                    [self.qsl[idx][0] for idx in batch_idx])
-                fea_lens = torch.tensor(
-                    [self.qsl[idx][1] for idx in batch_idx])
+                padded_batch_size = self.intra * 16 if self.actual_batch_size < self.intra * 16 else self.intra * 32
+                feas = torch.nn.utils.rnn.pad_sequence([self.qsl[idx][0] for idx in batch_idx])
+                feas = torch.nn.functional.pad(feas, (0, 0, 0, padded_batch_size - self.actual_batch_size, 0, 0), "constant", 0.)
+                fea_lens = torch.tensor([self.qsl[idx][1] for idx in batch_idx])
+                fea_lens = torch.nn.functional.pad(fea_lens, (0, padded_batch_size - self.actual_batch_size), "constant", 0.)
             results = self.model(feas, fea_lens)
         return results
 
     def query_samples_complete(self, samples, results, results_idx):
         batch_responses = []
-        for i in range(len(results)):
+        for i in range(self.actual_batch_size):
             res_arr = array.array("i", results[i])
             buf_inf = res_arr.buffer_info()
             response = lg.QuerySampleResponse(
