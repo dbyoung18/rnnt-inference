@@ -43,6 +43,104 @@ ProfileRecord::ProfileRecord(
   }
 }
 
+BaseSUT::BaseSUT(
+    const std::string& sample_file,
+    const std::string& model_file,
+    const std::string& processor_file,
+    int batch_size,
+    int split_len,
+    const std::string test_scenario,
+    bool processor,
+    const std::string& profiler_folder,
+    int profiler_iter,
+    int warmup_iter
+  ) : qsl_(sample_file), model_(model_file), processor_(processor_file),
+  mThreshold_(batch_size), split_len_(split_len),
+  test_scenario_(test_scenario), processor_flag_(processor),
+  profiler_folder_(profiler_folder), profiler_iter_(profiler_iter),
+  warmup_iter_(warmup_iter) {
+
+  // Get HW info
+  nMaxThread_ = std::thread::hardware_concurrency();  // (mHT_ + 1) * nSockets_ * nCoresPerSocket_
+  nMaxProc_ = kmp::KMPLauncher::getMaxProc();
+  nSockets_ = 2;  // assume 2 sockets
+  nCoresPerSocket_ = nMaxProc_ / nSockets_ / 2;
+  mHt_ = (nMaxThread_ == nMaxProc_);
+
+  batch_sort_ = (test_scenario == "Offline");
+  std::cout << "Use HT: " << mHt_ << std::endl;
+  std::cout << "Use Processor: " << processor_flag_ << std::endl;
+  std::cout << "Sort samples: " << batch_sort_ << std::endl;
+  std::cout << "Warmup Iteration: " << warmup_iter_ << std::endl;
+}
+
+void BaseSUT::IssueQuery(const std::vector<mlperf::QuerySample>& samples) {
+  std::unique_lock<std::mutex> l(mtx_);
+  if (batch_sort_) {
+    // Parallel sort samples into a queue
+    mQueue_ = qsl_.Sort(samples);
+  } else {
+    for (auto sample : samples)
+      mQueue_.emplace_back(sample);
+  }
+  ctrl_.notify_one();
+}
+
+std::tuple<at::Tensor, at::Tensor> BaseSUT::inferProcessor(int which, qsl::Stack wav_stack) {
+  auto pre_results = processor_.inference_at(which, wav_stack).toTuple()->elements();
+  auto fea = pre_results[0].toTensor();
+  auto fea_lens = pre_results[1].toTensor();
+  // Test processor only(response {N, C, T})
+  //QuerySamplesComplete(samples, fea);
+  return {fea, fea_lens};
+}
+
+template <class T>
+void BaseSUT::inferEncoder(int which, T& state) {
+  if (split_len_ != -1) {
+    // accumulate transcription
+    rnnt::TensorVector fi_list;
+    fi_list.reserve(rnnt::HALF_MAX_FEA_LEN);
+    while(state.next()) {
+      model_.transcription_encode(which, state);
+      fi_list.emplace_back(state.f_);
+    }
+    state.f_ = torch::cat(fi_list, 0);
+  } else {
+    model_.transcription_encode(which, state);
+  }
+  state.f_lens_ = torch::ceil(state.infer_lens_ / rnnt::STACK_TIME_FACTOR).to(torch::kInt32);
+}
+
+template <class T>
+void BaseSUT::inferDecoder(int which, T& state) {
+  model_.greedy_decode(which, state);
+}
+
+void BaseSUT::QuerySamplesComplete(
+    const std::vector<mlperf::QuerySample>& samples,
+    const at::Tensor& results) {
+  std::vector<mlperf::QuerySampleResponse> responses(samples.size());
+
+  for (size_t i = 0; i < samples.size(); ++i) {
+    responses[i].id = samples[i].id;
+    responses[i].data = reinterpret_cast<uintptr_t>(results[i].data_ptr());
+    responses[i].size = results[i].nbytes();
+  }
+  mlperf::QuerySamplesComplete(responses.data(), responses.size());
+}
+
+BaseSUT::~BaseSUT() {
+  {
+    std::unique_lock<std::mutex> l(mtx_);
+    mStop_ = true;
+    ctrl_.notify_all();
+  }
+
+  for (auto& Instance : mInstances_)
+    Instance.join();
+}
+
 OfflineSUT::OfflineSUT(
     const std::string& sample_file,
     const std::string& model_file,
@@ -56,53 +154,52 @@ OfflineSUT::OfflineSUT(
     const std::string& profiler_folder,
     int profiler_iter,
     int warmup_iter
-  ) : qsl_(sample_file), model_(model_file), processor_(processor_file),
-  nInstances_(inter_parallel), nThreadsPerInstance_(intra_parallel),
-  mThreshold_(batch_size), split_len_(split_len),
-  test_scenario_(test_scenario), processor_flag_(processor),
-  profiler_folder_(profiler_folder), profiler_iter_(profiler_iter),
-  warmup_iter_(warmup_iter) {
+  ) : BaseSUT(sample_file, model_file, processor_file,
+      batch_size, split_len,
+      test_scenario, processor,
+      profiler_folder, profiler_iter, warmup_iter),
+      nInstances_(inter_parallel), nThreadsPerInstance_(intra_parallel) {
 
-  batch_sort_ = (test_scenario == "Offline");
-
-  nMaxThread_ = std::thread::hardware_concurrency();
-  mHt_ = (nMaxThread_ == kmp::KMPLauncher::getMaxProc());
-
-  // Verify nInstance_
+  // Verify nInstances_
   if ((nThreadsPerInstance_ * nInstances_) > (nMaxThread_ / (mHt_+1)))
     nInstances_ = nMaxThread_ / (mHt_ + 1) / nThreadsPerInstance_;
 
-  std::cout << "Use HT: " << mHt_ << std::endl;
-  std::cout << "Use Processor: " << processor_flag_ << std::endl;
-  std::cout << "Sort samples: " << batch_sort_ << std::endl;
-  std::cout << "Warmup Iteration: " << warmup_iter_ << std::endl;
+  // Construct instances & bind core(assume 2 sockets)
+  int part[] = {nMaxThread_, nMaxThread_ - nCoresPerSocket_};
+  std::vector<int> instance_root(nInstances_);
+  std::generate(instance_root.begin(), instance_root.end(), [=, index = 0, root = 0]() mutable
+      {root=part[index & 1] - nThreadsPerInstance_ * ((index >> 1) + 1); ++index; return root;});
 
-  // Construct instances
-  if (test_scenario_ == "Offline")
-    for (int i = 0; i < nInstances_; ++ i)
-      mInstances_.emplace_back(&OfflineSUT::thInstance, this, i);
+  for (int i = 0; i < nInstances_; ++ i) {
+    mInstances_.emplace_back(&OfflineSUT::thInstance, this, i, instance_root[i]);
+    std::cout << "Binding instance " << i << " to " << instance_root[i] << "-" << instance_root[i] + nThreadsPerInstance_ - 1 << std::endl << std::flush;
+  }
 }
 
-int OfflineSUT::rootProc(int index) {
-  // XXX : Assumed 2-sockets
-  int part[] = {nMaxThread_, nMaxThread_ * (2 + (int)mHt_) / 4};
-  auto select = index & 1;
-  int root = part[select] - nThreadsPerInstance_ * ((index >> 1) + 1);
-
-  // Dump binding info
-  auto core_end = root + nThreadsPerInstance_ - 1;
-  std::cout << "Binding worker " << index << " to " << root << "-" << core_end << std::endl << std::flush;
-
-  // Assert root > 0
-  return root;
+void OfflineSUT::warmup(int which, int warmup_iter) {
+  // auto start = std::chrono::high_resolution_clock::now();
+  long batch_size = (long)mThreshold_;
+  at::Tensor fea, fea_lens;
+  rnnt::State state;
+  for (int i = 0; i < warmup_iter; ++i) {
+    auto wav = torch::randn({batch_size, rnnt::MAX_WAV_LEN});
+    auto wav_lens = torch::full({batch_size}, rnnt::MAX_WAV_LEN, torch::kInt64);
+    std::tie(fea, fea_lens) = inferProcessor(which, {wav, wav_lens});
+    fea = fea.permute({2, 0, 1}).contiguous();
+    state.update(fea, fea_lens, split_len_);
+    inferEncoder(which, state);
+    inferDecoder(which, state);
+  }
+  // auto end = std::chrono::high_resolution_clock::now();
+  // std::chrono::duration<double, std::milli> elapsed = end - start;
+  // std::cout << "Warmup done. cost:" << elapsed.count() << std::endl;
 }
 
-void OfflineSUT::thInstance(int index) {
+void OfflineSUT::thInstance(int index, int root) {
   at::NoGradGuard no_grad;
 
   kmp::KMPLauncher thCtrl;
   std::vector<int> places (nThreadsPerInstance_);
-  auto root = rootProc(index);
   auto which = index & 1;
 
   for (int i = 0; i < nThreadsPerInstance_; ++ i)
@@ -178,81 +275,6 @@ void OfflineSUT::thInstance(int index) {
   }
 }
 
-void OfflineSUT::IssueQuery(const std::vector<mlperf::QuerySample>& samples) {
-  std::unique_lock<std::mutex> l(mtx_);
-  if (batch_sort_) {
-    // Parallel sort samples into a queue
-    mQueue_ = qsl_.Sort(samples);
-  } else {
-    for (auto sample : samples)
-      mQueue_.emplace_back(sample);
-  }
-  ctrl_.notify_one();
-}
-
-void OfflineSUT::warmup(int which, int warmup_iter) {
-  // auto start = std::chrono::high_resolution_clock::now();
-  long batch_size = (long)mThreshold_;
-  at::Tensor fea, fea_lens;
-  rnnt::State state;
-  for (int i = 0; i < warmup_iter; ++i) {
-    auto wav = torch::randn({batch_size, rnnt::MAX_WAV_LEN});
-    auto wav_lens = torch::full({batch_size}, rnnt::MAX_WAV_LEN, torch::kInt64);
-    std::tie(fea, fea_lens) = inferProcessor(which, {wav, wav_lens});
-    fea = fea.permute({2, 0, 1}).contiguous();
-    state.update(fea, fea_lens, split_len_);
-    inferEncoder(which, state);
-    inferDecoder(which, state);
-  }
-  // auto end = std::chrono::high_resolution_clock::now();
-  // std::chrono::duration<double, std::milli> elapsed = end - start;
-  // std::cout << "Warmup done. cost:" << elapsed.count() << std::endl;
-}
-
-std::tuple<at::Tensor, at::Tensor> OfflineSUT::inferProcessor(int which, qsl::Stack wav_stack) {
-  auto pre_results = processor_.inference_at(which, wav_stack).toTuple()->elements();
-  auto fea = pre_results[0].toTensor();
-  auto fea_lens = pre_results[1].toTensor();
-  // Test processor only(response {N, C, T})
-  //QuerySamplesComplete(samples, fea);
-  return {fea, fea_lens};
-}
-
-template <class T>
-void OfflineSUT::inferEncoder(int which, T& state) {
-  if (split_len_ != -1) {
-    // accumulate transcription
-    rnnt::TensorVector fi_list;
-    fi_list.reserve(rnnt::HALF_MAX_FEA_LEN);
-    while(state.next()) {
-      model_.transcription_encode(which, state);
-      fi_list.emplace_back(state.f_);
-    }
-    state.f_ = torch::cat(fi_list, 0);
-  } else {
-    model_.transcription_encode(which, state);
-  }
-  state.f_lens_ = torch::ceil(state.infer_lens_ / rnnt::STACK_TIME_FACTOR).to(torch::kInt32);
-}
-
-template <class T>
-void OfflineSUT::inferDecoder(int which, T& state) {
-  model_.greedy_decode(which, state);
-}
-
-void OfflineSUT::QuerySamplesComplete(
-    const std::vector<mlperf::QuerySample>& samples,
-    const at::Tensor& results) {
-  std::vector<mlperf::QuerySampleResponse> responses(samples.size());
-
-  for (size_t i = 0; i < samples.size(); ++i) {
-    responses[i].id = samples[i].id;
-    responses[i].data = reinterpret_cast<uintptr_t>(results[i].data_ptr());
-    responses[i].size = results[i].nbytes();
-  }
-  mlperf::QuerySamplesComplete(responses.data(), responses.size());
-}
-
 void OfflineSUT::QuerySamplesComplete(
     const std::vector<mlperf::QuerySample>& samples,
     const rnnt::State& state) {
@@ -267,17 +289,6 @@ void OfflineSUT::QuerySamplesComplete(
     responses[i].size = res_len * 4;
   }
   mlperf::QuerySamplesComplete(responses.data(), responses.size());
-}
-
-OfflineSUT::~OfflineSUT() {
-  {
-    std::unique_lock<std::mutex> l(mtx_);
-    mStop_ = true;
-    ctrl_.notify_all();
-  }
-
-  for (auto& Instance : mInstances_)
-    Instance.join();
 }
 
 ServerSUT::ServerSUT(
@@ -297,62 +308,79 @@ ServerSUT::ServerSUT(
     const std::string& profiler_folder,
     int profiler_iter,
     int warmup_iter
-  ) : OfflineSUT(sample_file, model_file, processor_file,
-      inter_parallel, intra_parallel, batch_size, split_len,
-      test_scenario, processor, profiler_folder, profiler_iter, warmup_iter),
+  ) : BaseSUT(sample_file, model_file, processor_file,
+      batch_size, split_len,
+      test_scenario, processor,
+      profiler_folder, profiler_iter, warmup_iter),
       nProducers_(pro_inter_parallel), nThreadsPerProducer_(pro_intra_parallel),
+      nConsumers_(inter_parallel), nThreadsPerConsumer_(intra_parallel),
       mProThreshold_(pro_batch_size), mQueueProcessed_(3000) {
 
   mResponseThreshold_ = (response_size == -1) ? mThreshold_ : response_size;
 
-  // Verify nInstance_
-  if ((nProducers_ * nThreadsPerProducer_ + nInstances_ * nThreadsPerInstance_) > (nMaxThread_ / (mHt_+1)))
-    nInstances_ = (nMaxThread_ / (mHt_ + 1) - nProducers_ * nThreadsPerProducer_) / nThreadsPerInstance_;
+  // Verify nConsumers_
+  if ((nProducers_ * nThreadsPerProducer_ + nConsumers_ * nThreadsPerConsumer_) > (nMaxThread_ / (mHt_+1)))
+    nConsumers_ = (nMaxThread_ / (mHt_ + 1) - nProducers_ * nThreadsPerProducer_) / nThreadsPerConsumer_;
 
-  // Construct instances
-  for (int i = 0; i < nProducers_; ++ i)
-    mInstances_.emplace_back(&ServerSUT::thInstanceProducer, this, i);
-  for (int i = 0; i < nInstances_; ++ i)
-    mInstances_.emplace_back(&ServerSUT::thInstanceConsumer, this, i);
+  // Construct instances & bind core(assume 2 sockets)
+  int producer_part[] = {nMaxThread_ - nCoresPerSocket_ * nSockets_, nMaxThread_ - nCoresPerSocket_};
+  std::vector<int> producer_root(nProducers_);
+  std::generate(producer_root.begin(), producer_root.end(), [=, index = 0, root = 0]() mutable
+      {root=producer_part[index & 1] + nThreadsPerProducer_ * (index >> 1); ++index; return root;});
 
-}
+  int consumer_part[] = {nMaxThread_,
+    nMaxThread_ - nProducers_ / nSockets_ * nThreadsPerProducer_ - (nConsumers_ + nSockets_ - 1) / nSockets_ * nThreadsPerConsumer_};
+  std::vector<int> consumer_root(nConsumers_);
+  std::generate(consumer_root.begin(), consumer_root.end(), [=, index = 0, root = 0]() mutable
+      {root=consumer_part[index & 1] - nThreadsPerConsumer_ * ((index >> 1) + 1); ++index; return root;});
 
-int ServerSUT::rootProc(int index, int worker_type) {
-  // XXX : Assumed 2-sockets
-  int root = 0, core_end = 0, select = 0;
-  int part[2];
-  std::string type_name;
-  switch (worker_type) {
-    case Producer:
-      root = nMaxThread_ - nThreadsPerProducer_;
-      core_end = root + nThreadsPerProducer_ - 1;
-      type_name = "Producer";
-      break;
-    case Consumer:
-      part[0] = nMaxThread_ - pipeline_flag_ * nProducers_ * nThreadsPerProducer_;
-      part[1] = nMaxThread_ * (2 + (int)mHt_) / 4 - pipeline_flag_ * (nProducers_ * nThreadsPerProducer_ / 2);
-      select = index & 1;
-      root = part[select] - nThreadsPerInstance_ * ((index >> 1) + 1);
-      core_end = root + nThreadsPerInstance_ - 1;
-      type_name = "Consumer";
-      break;
-    default:
-      std::cout << "Unknown, worker type must be [Producer/Consumer]" << std::endl;
+  for (int i = 0; i < nProducers_; ++ i) {
+    mInstances_.emplace_back(&ServerSUT::thInstanceProducer, this, i, producer_root[i]);
+    std::cout << "Binding producer " << i << " to " << producer_root[i] << "-" << producer_root[i] + nThreadsPerProducer_ - 1 << std::endl << std::flush;
   }
 
-  // Dump binding info
-  std::cout << "Binding " << type_name << " worker " << index << " to " << root << "-" << core_end << std::endl << std::flush;
-
-  // Assert root > 0
-  return root;
+  for (int i = 0; i < nConsumers_; ++ i) {
+    mInstances_.emplace_back(&ServerSUT::thInstanceConsumer, this, i, consumer_root[i]);
+    std::cout << "Binding consumer " << i << " to " << consumer_root[i] << "-" << consumer_root[i] + nThreadsPerConsumer_ - 1 << std::endl << std::flush;
+  }
 }
 
-void ServerSUT::thInstanceProducer(int index) {
+void ServerSUT::warmup(int which, int warmup_iter, int worker_type) {
+  // auto start = std::chrono::high_resolution_clock::now();
+  long batch_size = (long)mThreshold_;
+  at::Tensor wav, wav_lens;
+  at::Tensor fea, fea_lens;
+  auto state = (test_scenario_ == "Server") ? rnnt::State(mThreshold_, split_len_)
+      : rnnt::PipelineState(mThreshold_, split_len_, mResponseThreshold_);
+  for (int i = 0; i < warmup_iter; ++i) {
+    switch (worker_type) {
+      case Producer:
+        wav = torch::randn({batch_size, rnnt::MAX_WAV_LEN});
+        wav_lens = torch::full({batch_size}, rnnt::MAX_WAV_LEN, torch::kInt64);
+        std::tie(fea, fea_lens) = inferProcessor(which, {wav, wav_lens});
+        break;
+      case Consumer:
+        fea = torch::randn({batch_size, rnnt::TRANS_INPUT_SIZE, rnnt::MAX_FEA_LEN});
+        fea = fea.permute({2, 0, 1}).contiguous();
+        fea_lens = torch::full({batch_size}, rnnt::MAX_FEA_LEN, torch::kInt32);
+        state.update(fea, fea_lens, split_len_);
+        inferEncoder(which, state);
+        inferDecoder(which, state);
+        break;
+      default:
+        std::cout << "Unknown, worker type must be [Producer/Consumer]" << std::endl;
+    }
+  }
+  // auto end = std::chrono::high_resolution_clock::now();
+  // std::chrono::duration<double, std::milli> elapsed = end - start;
+  // std::cout << "Warmup done. cost:" << elapsed.count() << std::endl;
+}
+
+void ServerSUT::thInstanceProducer(int index, int root) {
   at::NoGradGuard no_grad;
 
   kmp::KMPLauncher thCtrl;
   std::vector<int> places (nThreadsPerProducer_);
-  auto root = rootProc(index, Producer);
   auto which = index & 1;
 
   for (int i = 0; i < nThreadsPerProducer_; ++i)
@@ -399,22 +427,21 @@ void ServerSUT::thInstanceProducer(int index) {
       for (int i = 0; i < samples.size(); ++i) {
         mQueueProcessed_.enqueue({samples[i], fea_list[i], fea_lens_list[i]});
       }
-      // std::cout << "Producer worker " << index << "::process size " << snippet.size()
+      // std::cout << "Producer " << index << "::process size " << snippet.size()
       //     << ", current queue size: " << mQueueProcessed_.size_approx() << std::endl << std::flush;
-      // if (mQueue_.empty()) finish_produce_ = true;
+      if (mQueue_.empty()) finish_produce_ = true;
     }
   }
 }
 
-void ServerSUT::thInstanceConsumer(int index) {
+void ServerSUT::thInstanceConsumer(int index, int root) {
   at::NoGradGuard no_grad;
 
   kmp::KMPLauncher thCtrl;
-  std::vector<int> places (nThreadsPerInstance_);
-  auto root = rootProc(index, Consumer);
+  std::vector<int> places (nThreadsPerConsumer_);
   auto which = index & 1;
 
-  for (int i = 0; i < nThreadsPerInstance_; ++i)
+  for (int i = 0; i < nThreadsPerConsumer_; ++i)
     places[i] = (root + i);
 
   thCtrl.setAffinityPlaces(places).pinThreads();
@@ -453,11 +480,11 @@ void ServerSUT::thInstanceConsumer(int index) {
       }
 
       if (mStop_ || (finish_dequeue && state.remain_size_ == 0)) {
-        std::cout << "Consumer worker " << index << " finish iteration " << nIteration << std::endl << std::flush;
+        std::cout << "Consumer " << index << " finish iteration " << nIteration << std::endl << std::flush;
         break;
       }
 
-      // std::cout << "Consumer worker " << index << "::start server iteration " << nIteration
+      // std::cout << "Consumer " << index << "::start server iteration " << nIteration
       //     << ", dequeue(" << dequeue_size << ")/require(" << state.finish_size_ << ")"
       //     << ", current queue size: " << mQueueProcessed_.size_approx() << std::endl << std::flush;
 
@@ -475,7 +502,7 @@ void ServerSUT::thInstanceConsumer(int index) {
         guard_->~ProfileRecord();
 
       // auto last_remain_size = state.batch_size_ - state.dequeue_size_ - state.padded_size_;
-      // std::cout << "Consumer worker " << index << "::finish iteration " << nIteration << ", "
+      // std::cout << "Consumer " << index << "::finish iteration " << nIteration << ", "
       //     << "bs(" << state.batch_size_ << ")=finish(" << state.finish_size_ << ")+remain(" << state.remain_size_
       //     << ")=last_remain(" << last_remain_size << ")+dequeue(" << state.dequeue_size_ << ")+padded(" << state.padded_size_ << ")"
       //     << ", current queue size: " << mQueueProcessed_.size_approx() << std::endl << std::flush;
@@ -484,37 +511,6 @@ void ServerSUT::thInstanceConsumer(int index) {
       nIteration += 1;
     }
   }
-}
-
-void ServerSUT::warmup(int which, int warmup_iter, int worker_type) {
-  // auto start = std::chrono::high_resolution_clock::now();
-  long batch_size = (long)mThreshold_;
-  at::Tensor wav, wav_lens;
-  at::Tensor fea, fea_lens;
-  auto state = (test_scenario_ == "Server") ? rnnt::State(mThreshold_, split_len_)
-      : rnnt::PipelineState(mThreshold_, split_len_, mResponseThreshold_);
-  for (int i = 0; i < warmup_iter; ++i) {
-    switch (worker_type) {
-      case Producer:
-        wav = torch::randn({batch_size, rnnt::MAX_WAV_LEN});
-        wav_lens = torch::full({batch_size}, rnnt::MAX_WAV_LEN, torch::kInt64);
-        std::tie(fea, fea_lens) = inferProcessor(which, {wav, wav_lens});
-        break;
-      case Consumer:
-        fea = torch::randn({batch_size, rnnt::TRANS_INPUT_SIZE, rnnt::MAX_FEA_LEN});
-        fea = fea.permute({2, 0, 1}).contiguous();
-        fea_lens = torch::full({batch_size}, rnnt::MAX_FEA_LEN, torch::kInt32);
-        state.update(fea, fea_lens, split_len_);
-        inferEncoder(which, state);
-        inferDecoder(which, state);
-        break;
-      default:
-        std::cout << "Unknown, worker type must be [Producer/Consumer]" << std::endl;
-    }
-  }
-  // auto end = std::chrono::high_resolution_clock::now();
-  // std::chrono::duration<double, std::milli> elapsed = end - start;
-  // std::cout << "Warmup done. cost:" << elapsed.count() << std::endl;
 }
 
 void ServerSUT::QuerySamplesComplete(
@@ -534,7 +530,7 @@ void ServerSUT::QuerySamplesComplete(
       responses[j].size = res_len * 4;
       ++j;
       // std::cout << samples[i].index << "::" << models::TorchModel::sequence_to_string(state.res_[i], res_len) << std::endl << std::flush;
-      std::cout << "Consumer worker " << index << " finish sample " << samples[i].id << ", cost " << get_duration(samples[i]) << " ms\n" << std::flush;
+      // std::cout << "Consumer " << index << " finish sample " << samples[i].id << ", cost " << get_duration(samples[i]) << " ms\n" << std::flush;
     }
   }
   mlperf::QuerySamplesComplete(responses.data(), responses.size());
