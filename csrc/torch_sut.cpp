@@ -152,11 +152,13 @@ void OfflineSUT::thInstance(int index) {
       at::Tensor fea, fea_lens;
       qsl::Stack input_stack;
       if (processor_flag_) {
+        // pad T to max_len in batch
         input_stack = qsl_.AssembleSamples(std::move(indices), processor_flag_);
         std::tie(fea, fea_lens) = inferProcessor(which, input_stack);
         fea = fea.permute({2, 0, 1}).contiguous();
       } else {
-        auto padded_batch_size = (actual_batch_size < nThreadsPerInstance_ * 16) ? nThreadsPerInstance_ * 16 : nThreadsPerInstance_ * 32;
+        // pad T to max_len in batch & pad N to ensure last batch accuracy
+        auto padded_batch_size = (actual_batch_size + 31) / 32 * 32;
         input_stack = qsl_.AssembleSamples(std::move(indices), processor_flag_, padded_batch_size);
         fea = input_stack[0].toTensor();
         fea_lens = input_stack[1].toTensor();

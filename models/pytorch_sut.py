@@ -28,7 +28,6 @@ class PytorchSUT:
         else:
             self.processor = None
         self.batch_size = batch_size
-        self.intra = torch.get_num_threads()
         # create model
         if run_mode == "quant":
             from modeling_rnnt import RNNT
@@ -61,6 +60,7 @@ class PytorchSUT:
         self.actual_batch_size = len(batch_idx)
         with torch.no_grad():
             if self.enable_process:
+                # pad T to max_len in batch
                 wavs = torch.nn.utils.rnn.pad_sequence(
                     [self.qsl[idx][0] for idx in batch_idx], batch_first=True)
                 wav_lens = torch.tensor(
@@ -69,11 +69,14 @@ class PytorchSUT:
                 # {N, C, T} -> {T, N, C}
                 feas = feas.permute(2, 0, 1).contiguous()
             else:
-                padded_batch_size = self.intra * 16 if self.actual_batch_size < self.intra * 16 else self.intra * 32
+                # pad T to max_len in batch
                 feas = torch.nn.utils.rnn.pad_sequence([self.qsl[idx][0] for idx in batch_idx])
-                feas = torch.nn.functional.pad(feas, (0, 0, 0, padded_batch_size - self.actual_batch_size, 0, 0), "constant", 0.)
                 fea_lens = torch.tensor([self.qsl[idx][1] for idx in batch_idx])
-                fea_lens = torch.nn.functional.pad(fea_lens, (0, padded_batch_size - self.actual_batch_size), "constant", 0.)
+                # pad N to ensure last batch accuracy
+                if self.actual_batch_size % 32 != 0:
+                    padded_batch_size = (self.actual_batch_size // 32 + 1) * 32
+                    feas = torch.nn.functional.pad(feas, (0, 0, 0, padded_batch_size - self.actual_batch_size, 0, 0), "constant", 0.)
+                    fea_lens = torch.nn.functional.pad(fea_lens, (0, padded_batch_size - self.actual_batch_size), "constant", 0.)
             results = self.model(feas, fea_lens)
         return results
 
