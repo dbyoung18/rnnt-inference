@@ -59,13 +59,17 @@ if [[ ${STAGE} -le 4 ]]; then
 fi
 
 if [[ ${STAGE} -le 5 ]]; then
-  # TODO: enable Server scenario
-  for scenario in Offline; do
-    echo '==> Run RNN-T ${scenario} accuracy'
-    ACCURACY=true SCENARIO=${scenario} WAV=true LEN=4 ./launch_sut.sh
-    echo '==> Run RNN-T ${scenario} benchmark'
-    SCENARIO=${scenario} WAV=true LEN=4 ./launch_sut.sh
-  done
+  echo '==> Run RNN-T Offline accuracy'
+  SCENARIO=Offline WAV=true LEN=4 ACCURACY=true ./launch_sut.sh
+  sleep 5
+  echo '==> Run RNN-T Offline benchmark'
+  SCENARIO=Offline WAV=true LEN=4 WARMUP=3 ./launch_sut.sh
+  sleep 5
+  echo '==> Run RNN-T Server accuracy'
+  SCENARIO=Server WAV=true LEN=4 RESPONSE=1 BS=64 ACCURACY=true ./launch_sut.sh
+  sleep 5
+  echo '==> Run RNN-T Server benchmark'
+  SCENARIO=Server WAV=true LEN=4 RESPONSE=1 BS=64 ./launch_sut.sh
   wait
 fi
 

@@ -28,7 +28,7 @@ class AudioProcessing(nn.Module):
     def __init__(self, run_mode, **kwargs):
         nn.Module.__init__(self)    # For PyTorch API
         self.optim_level = kwargs.get('optimization_level', 0)
-        kwargs['pad_output'] = True if run_mode == 'quant' else False
+        kwargs['pad_out_feat'] = True if run_mode == 'quant' else False
         self.featurizer = FeatureFactory.from_config(kwargs)
 
     def forward(self, wavs: torch.Tensor, wav_lens: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:

@@ -94,14 +94,16 @@ class FilterbankFeatures(nn.Module):
                  pad_to=8,
                  max_duration=16.7,
                  frame_splicing=1,
-                 pad_output=False):
+                 pad_out_feat=False,
+                 pad_batch_size=False):
         super(FilterbankFeatures, self).__init__()
 
         self.frame_splicing = frame_splicing
+        self.pad_batch_size = pad_batch_size
 
         BATCH_SIZE = 128
         IN_FEAT = 80
-        OUT_FEAT = 256 if pad_output else IN_FEAT * self.frame_splicing
+        OUT_FEAT = 256 if pad_out_feat else IN_FEAT * self.frame_splicing
         OUT_LEN = 500
 
         torch_windows = {
@@ -146,7 +148,7 @@ class FilterbankFeatures(nn.Module):
         )
         max_pad = 16 - (max_length % 16)
         self.max_length = max_length + max_pad
-        self.output_shape = torch.zeros((BATCH_SIZE, OUT_FEAT, OUT_LEN)) if pad_output else None
+        self.output_shape = torch.zeros((1, OUT_FEAT, OUT_LEN))
         self.norm_weight = torch.ones((BATCH_SIZE, OUT_FEAT, OUT_LEN))
         self.norm_bias = torch.zeros((BATCH_SIZE, OUT_FEAT, OUT_LEN))
 
@@ -197,6 +199,9 @@ class FilterbankFeatures(nn.Module):
         x = torch.ops.intel_mlperf.frame_splicing(x, self.frame_splicing)
 
         # normalize if required
+        # pad N to ensure last batch accuracy
+        if self.pad_batch_size:
+            self.output_shape[0] = (actual_bs + 31) / 32 * 32
         x, x_lens = torch.ops.intel_mlperf.i_layernorm_pad(
             x, self.norm_weight, self.norm_bias, x_lens, 1e-12, unbiased=1, output_shape=self.output_shape)
 
@@ -210,7 +215,8 @@ class FilterbankFeatures(nn.Module):
                    normalize=cfg['normalize'],
                    max_duration=cfg.get('max_duration', 16.7),
                    dither=cfg['dither'], pad_to=cfg.get("pad_to", 0),
-                   frame_splicing=cfg.get('frame_splicing', 1), log=log, pad_output=cfg.get('pad_output'))
+                   frame_splicing=cfg.get('frame_splicing', 1), log=log,
+                   pad_out_feat=cfg.get('pad_out_feat'), pad_batch_size=cfg.get('pad_batch_size'))
 
 
 class FeatureFactory(object):
