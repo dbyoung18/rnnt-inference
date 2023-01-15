@@ -101,10 +101,11 @@ void PipelineState::update (
     std::vector<std::tuple<mlperf::QuerySample, at::Tensor, at::Tensor>> &dequeue_list,
     std::vector<mlperf::QuerySample> &samples,
     int32_t dequeue_size, int32_t split_len) {
+  dequeue_size_ = dequeue_size;
   // currently use fixed batch_size!
-  // auto batch_size = (dequeue_size > batch_size_) ? dequeue_size : batch_size_;
-  // if (batch_size != batch_size_)
-  //   PipelineState::init(batch_size, split_len);
+  // actual_batch_size_ = dequeue_size_ + remain_size_;
+  // if (actual_batch_size_ > batch_size_)
+  //   PipelineState::init(actual_batch_size_, split_len);
   // update transcription tensors
   auto trans_state_mask = finish_idx_.unsqueeze(1).expand({batch_size_, TRANS_HIDDEN_SIZE});
   for (int32_t layer = 0; layer < PRE_NUM_LAYERS; ++layer) {

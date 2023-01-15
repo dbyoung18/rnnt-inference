@@ -11,7 +11,7 @@ pushd ${HOME_DIR}
 echo '==> Building clang-15'
 git clone https://github.com/llvm/llvm-project.git
 pushd llvm-project
-git checkout 8df54a6a03a6d07e3053eff9806b450ec9193772
+git checkout llvmorg-15.0.7
 mkdir build
 pushd build
 export LD_LIBRARY_PATH=${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}

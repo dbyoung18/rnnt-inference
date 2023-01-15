@@ -4,14 +4,14 @@ set -ex
 export LD_PRELOAD=${CONDA_PREFIX}/lib/libjemalloc.so
 export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:percpu,metadata_thp:always,dirty_decay_ms:30000,muzzy_decay_ms:-1"
 
-: ${BS:=128}
-: ${LEN:=-1}
-: ${RESPONSE:=-1}
 : ${PRO_BS:=32}
 : ${PRO_INTER:=1}
 : ${PRO_INTRA:=8}
+: ${BS:=128}
 : ${INTER:=28}
 : ${INTRA:=4}
+: ${LEN:=-1}
+: ${RESPONSE:=-1}
 : ${SCENARIO=${2:-"Offline"}}
 : ${ACCURACY:=false}
 : ${DEBUG:=false}

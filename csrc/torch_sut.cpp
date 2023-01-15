@@ -25,11 +25,22 @@ void sleep_thread(int duration) {
   return;
 }
 
-long get_duration(const mlperf::QuerySample& sample) {
+long get_latency(const mlperf::QuerySample& sample) {
   mlperf::PerfClock::time_point timestamp = mlperf::PerfClock::now();
   mlperf::loadgen::SampleMetadata* sample_metadata = reinterpret_cast<mlperf::loadgen::SampleMetadata*>(sample.id);
   mlperf::loadgen::QueryMetadata* query_metadata = sample_metadata->query_metadata;
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(timestamp - query_metadata->scheduled_time).count();
+  return duration;
+}
+
+long get_duration(mlperf::PerfClock::time_point start) {
+  mlperf::PerfClock::time_point end = mlperf::PerfClock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+  return duration;
+}
+
+long get_duration(mlperf::PerfClock::time_point start, mlperf::PerfClock::time_point end) {
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
   return duration;
 }
 
@@ -90,8 +101,6 @@ std::tuple<at::Tensor, at::Tensor> BaseSUT::inferProcessor(int which, qsl::Stack
   auto pre_results = processor_.inference_at(which, wav_stack).toTuple()->elements();
   auto fea = pre_results[0].toTensor();
   auto fea_lens = pre_results[1].toTensor();
-  // Test processor only(response {N, C, T})
-  //QuerySamplesComplete(samples, fea);
   return {fea, fea_lens};
 }
 
@@ -182,10 +191,15 @@ void OfflineSUT::warmup(int which, int warmup_iter) {
   at::Tensor fea, fea_lens;
   rnnt::State state;
   for (int i = 0; i < warmup_iter; ++i) {
-    auto wav = torch::randn({batch_size, rnnt::MAX_WAV_LEN});
-    auto wav_lens = torch::full({batch_size}, rnnt::MAX_WAV_LEN, torch::kInt64);
-    std::tie(fea, fea_lens) = inferProcessor(which, {wav, wav_lens});
-    fea = fea.permute({2, 0, 1}).contiguous();
+    if (processor_flag_) {
+      auto wav = torch::randn({batch_size, rnnt::MAX_WAV_LEN});
+      auto wav_lens = torch::full({batch_size}, rnnt::MAX_WAV_LEN, torch::kInt32);
+      std::tie(fea, fea_lens) = inferProcessor(which, {wav, wav_lens});
+      fea = fea.permute({2, 0, 1}).contiguous();
+    } else {
+      fea = torch::randn({rnnt::MAX_FEA_LEN, batch_size, rnnt::PADDED_INPUT_SIZE});
+      fea_lens = torch::full({batch_size}, rnnt::MAX_FEA_LEN, torch::kInt32);
+    }
     state.update(fea, fea_lens, split_len_);
     inferEncoder(which, state);
     inferDecoder(which, state);
@@ -207,6 +221,9 @@ void OfflineSUT::thInstance(int index, int root) {
 
   thCtrl.setAffinityPlaces(places).pinThreads();
 
+  if (warmup_iter_ > 0)
+    warmup(which, warmup_iter_);
+
   Queue_t snippet;
 
   // Wait for work
@@ -215,12 +232,11 @@ void OfflineSUT::thInstance(int index, int root) {
     log_name = profiler_folder_ + "/" + Name() + "_" + std::to_string(index) + "_" + std::to_string(which) + ".json";
     std::ofstream out(log_name);
   }
-  if (warmup_iter_ > 0)
-    warmup(which, warmup_iter_);
   {
     auto guard_ = std::make_unique<ProfileRecord>((profiler_iter_ > 0), log_name);
-    size_t nIteration = 0;
     rnnt::State state;
+    size_t nIteration = 0;
+    // long processor_dur = 0, encoder_dur = 0, decoder_dur = 0;
     while (true) {
       // critical section
       {
@@ -240,6 +256,8 @@ void OfflineSUT::thInstance(int index, int root) {
         ctrl_.notify_one();
       }
 
+      // mlperf::PerfClock::time_point iter_start = mlperf::PerfClock::now();
+
       std::vector<mlperf::QuerySample> samples(snippet.begin(), snippet.end());
       std::vector<mlperf::QuerySampleIndex> indices(samples.size());
       std::transform(samples.cbegin(), samples.cend(), indices.begin(),
@@ -252,6 +270,12 @@ void OfflineSUT::thInstance(int index, int root) {
         // pad T to max_len in batch
         input_stack = qsl_.AssembleSamples(std::move(indices), processor_flag_);
         std::tie(fea, fea_lens) = inferProcessor(which, input_stack);
+        // auto processor_end = mlperf::PerfClock::now();
+        // processor_dur = get_duration(iter_start, processor_end);
+        // std::cout << "Instance," << index << ",iter," << nIteration
+        //     << ",max_len," << fea_lens[0].item().toInt() << ",bs," << samples.size()
+        //     << ",proc," << processor_dur << std::endl << std::flush;
+        // BaseSUT::QuerySamplesComplete(samples, fea); continue;  // Test processor only(response {N, C, T})
         fea = fea.permute({2, 0, 1}).contiguous();
       } else {
         // pad T to max_len in batch & pad N to ensure last batch accuracy
@@ -263,12 +287,19 @@ void OfflineSUT::thInstance(int index, int root) {
 
       state.update(fea, fea_lens, split_len_, actual_batch_size);
       inferEncoder(which, state);
+      // auto encoder_end = mlperf::PerfClock::now();
+      // encoder_dur = get_duration(processor_end, encoder_end);
       inferDecoder(which, state);
+      // auto decoder_end = mlperf::PerfClock::now();
+      // decoder_dur = get_duration(encoder_end, decoder_end);
 
       QuerySamplesComplete(samples, state);
 
       nIteration += 1;
-      // std::cout << "finish iteration " << nIteration << ", cost:" << get_duration(samples[0]) << " ms\n";
+      // std::cout << "Instance," << index << ",iter," << nIteration
+      //     << ",max_len," << state.f_lens_[0].item().toInt() << ",bs," << samples.size()
+      //     << ",proc," << processor_dur << ",enc," << encoder_dur << ",dec," << decoder_dur
+      //     << ",lat," << get_duration(iter_start) << std::endl << std::flush;
       if (profiler_iter_ != -1 && nIteration >= profiler_iter_)
         guard_->~ProfileRecord();
     }
@@ -283,10 +314,10 @@ void OfflineSUT::QuerySamplesComplete(
 
   for (size_t i = 0; i < samples.size(); ++i) {
     auto res_len = res_lens[i].item().toInt();
-    // std::cout << samples[i].index << "::" << models::TorchModel::sequence_to_string(state.res_[i], res_len) << std::endl << std::flush;
     responses[i].id = samples[i].id;
     responses[i].data = reinterpret_cast<uintptr_t>(state.res_[i].data_ptr());
     responses[i].size = res_len * 4;
+    // std::cout << samples[i].index << "::" << models::TorchModel::sequence_to_string(state.res_[i], res_len) << std::endl << std::flush;
   }
   mlperf::QuerySamplesComplete(responses.data(), responses.size());
 }
@@ -314,7 +345,7 @@ ServerSUT::ServerSUT(
       profiler_folder, profiler_iter, warmup_iter),
       nProducers_(pro_inter_parallel), nThreadsPerProducer_(pro_intra_parallel),
       nConsumers_(inter_parallel), nThreadsPerConsumer_(intra_parallel),
-      mProThreshold_(pro_batch_size), mQueueProcessed_(3000) {
+      mProThreshold_(pro_batch_size), mProcessedQueue_(3000) {
 
   mResponseThreshold_ = (response_size == -1) ? mThreshold_ : response_size;
 
@@ -323,24 +354,23 @@ ServerSUT::ServerSUT(
     nConsumers_ = (nMaxThread_ / (mHt_ + 1) - nProducers_ * nThreadsPerProducer_) / nThreadsPerConsumer_;
 
   // Construct instances & bind core(assume 2 sockets)
-  int producer_part[] = {nMaxThread_ - nCoresPerSocket_ * nSockets_, nMaxThread_ - nCoresPerSocket_};
+  int producer_start = nMaxThread_ - nCoresPerSocket_ * nSockets_;
   std::vector<int> producer_root(nProducers_);
   std::generate(producer_root.begin(), producer_root.end(), [=, index = 0, root = 0]() mutable
-      {root=producer_part[index & 1] + nThreadsPerProducer_ * (index >> 1); ++index; return root;});
+      {root=producer_start + nThreadsPerProducer_ * index++; return root;});
 
-  int consumer_part[] = {nMaxThread_,
-    nMaxThread_ - nProducers_ / nSockets_ * nThreadsPerProducer_ - (nConsumers_ + nSockets_ - 1) / nSockets_ * nThreadsPerConsumer_};
+  int consumer_start = producer_start + nProducers_ * nThreadsPerProducer_;
   std::vector<int> consumer_root(nConsumers_);
   std::generate(consumer_root.begin(), consumer_root.end(), [=, index = 0, root = 0]() mutable
-      {root=consumer_part[index & 1] - nThreadsPerConsumer_ * ((index >> 1) + 1); ++index; return root;});
+      {root=consumer_start + nThreadsPerConsumer_ * index++; return root;});
 
   for (int i = 0; i < nProducers_; ++ i) {
-    mInstances_.emplace_back(&ServerSUT::thInstanceProducer, this, i, producer_root[i]);
+    mInstances_.emplace_back(&ServerSUT::thProducer, this, i, producer_root[i]);
     std::cout << "Binding producer " << i << " to " << producer_root[i] << "-" << producer_root[i] + nThreadsPerProducer_ - 1 << std::endl << std::flush;
   }
 
   for (int i = 0; i < nConsumers_; ++ i) {
-    mInstances_.emplace_back(&ServerSUT::thInstanceConsumer, this, i, consumer_root[i]);
+    mInstances_.emplace_back(&ServerSUT::thConsumer, this, i, consumer_root[i]);
     std::cout << "Binding consumer " << i << " to " << consumer_root[i] << "-" << consumer_root[i] + nThreadsPerConsumer_ - 1 << std::endl << std::flush;
   }
 }
@@ -356,11 +386,11 @@ void ServerSUT::warmup(int which, int warmup_iter, int worker_type) {
     switch (worker_type) {
       case Producer:
         wav = torch::randn({batch_size, rnnt::MAX_WAV_LEN});
-        wav_lens = torch::full({batch_size}, rnnt::MAX_WAV_LEN, torch::kInt64);
+        wav_lens = torch::full({batch_size}, rnnt::MAX_WAV_LEN, torch::kInt32);
         std::tie(fea, fea_lens) = inferProcessor(which, {wav, wav_lens});
         break;
       case Consumer:
-        fea = torch::randn({batch_size, rnnt::TRANS_INPUT_SIZE, rnnt::MAX_FEA_LEN});
+        fea = torch::randn({batch_size, rnnt::PADDED_INPUT_SIZE, rnnt::MAX_FEA_LEN});
         fea = fea.permute({2, 0, 1}).contiguous();
         fea_lens = torch::full({batch_size}, rnnt::MAX_FEA_LEN, torch::kInt32);
         state.update(fea, fea_lens, split_len_);
@@ -376,7 +406,7 @@ void ServerSUT::warmup(int which, int warmup_iter, int worker_type) {
   // std::cout << "Warmup done. cost:" << elapsed.count() << std::endl;
 }
 
-void ServerSUT::thInstanceProducer(int index, int root) {
+void ServerSUT::thProducer(int index, int root) {
   at::NoGradGuard no_grad;
 
   kmp::KMPLauncher thCtrl;
@@ -388,12 +418,14 @@ void ServerSUT::thInstanceProducer(int index, int root) {
 
   thCtrl.setAffinityPlaces(places).pinThreads();
 
-  Queue_t snippet;
-
   if (warmup_iter_ > 0)
     warmup(which, warmup_iter_, Producer);
 
+  Queue_t snippet;
+
   {
+    // size_t nIteration = 0;
+    // long dequeue_dur = 0, processor_dur = 0, enqueue_dur = 0;
     while (true) {
       // critical section
       {
@@ -406,6 +438,7 @@ void ServerSUT::thInstanceProducer(int index, int root) {
         auto it = mQueue_.begin();
         // XXX: pointer chaser, choose better solution
         std::advance(it, nPeek);
+
         snippet.clear();
         snippet.splice(snippet.begin(), mQueue_, mQueue_.begin(), it);
 
@@ -413,28 +446,51 @@ void ServerSUT::thInstanceProducer(int index, int root) {
         ctrl_.notify_one();
       }
 
+      // mlperf::PerfClock::time_point iter_start = mlperf::PerfClock::now();
+
       std::vector<mlperf::QuerySample> samples(snippet.begin(), snippet.end());
       std::vector<mlperf::QuerySampleIndex> indices(samples.size());
       std::transform(samples.cbegin(), samples.cend(), indices.begin(),
           [](mlperf::QuerySample sample) {return sample.index;});
+      // auto dequeue_end = mlperf::PerfClock::now();
+      // dequeue_dur = get_duration(iter_start, dequeue_end);
 
       at::Tensor fea, fea_lens;
-      auto input_stack = qsl_.AssembleSamples(std::move(indices), processor_flag_);
-      std::tie(fea, fea_lens) = inferProcessor(which, input_stack);
+      qsl::Stack input_stack;
+      if (processor_flag_) {
+        input_stack = qsl_.AssembleSamples(std::move(indices), processor_flag_);
+        std::tie(fea, fea_lens) = inferProcessor(which, input_stack);
+      } else {
+        input_stack = qsl_.AssembleSamples(std::move(indices), processor_flag_, samples.size());
+        fea = input_stack[0].toTensor().permute({1, 2, 0}).contiguous();  // {T, N, C} -> {N, C, T}
+        fea_lens = input_stack[1].toTensor();
+      }
+      // auto processor_end = mlperf::PerfClock::now();
+      // processor_dur = get_duration(iter_start, processor_end);
+
       auto fea_list = torch::split(fea, 1);
       auto fea_lens_list = torch::split(fea_lens, 1);
       // TODO: bulk_enqueue
       for (int i = 0; i < samples.size(); ++i) {
-        mQueueProcessed_.enqueue({samples[i], fea_list[i], fea_lens_list[i]});
+        mProcessedQueue_.enqueue({samples[i], fea_list[i], fea_lens_list[i]});
       }
-      // std::cout << "Producer " << index << "::process size " << snippet.size()
-      //     << ", current queue size: " << mQueueProcessed_.size_approx() << std::endl << std::flush;
+      // auto enqueue_end = mlperf::PerfClock::now();
+      // enqueue_dur = get_duration(iter_start, enqueue_end);
+
+      // nIteration += 1;
+      // auto latency = get_latency(samples[0]);
+      // std::cout << "Producer," << index << ",iter," << nIteration
+      //     << ",in," << samples.size() << ",out," << fea_lens_list.size()
+      //     << ",lqueue," << mQueue_.size() << ",pqueue," << mProcessedQueue_.size_approx()
+      //     << ",deq," << dequeue_dur << ",proc," << processor_dur << ",enq," << enqueue_dur
+      //     << ",prod," << get_duration(iter_start) << ",lat," << get_latency(samples[0]) << std::endl << std::flush;
+      // BaseSUT::QuerySamplesComplete(samples, fea);  // Test processor only(response {N, C, T})
       if (mQueue_.empty()) finish_produce_ = true;
     }
   }
 }
 
-void ServerSUT::thInstanceConsumer(int index, int root) {
+void ServerSUT::thConsumer(int index, int root) {
   at::NoGradGuard no_grad;
 
   kmp::KMPLauncher thCtrl;
@@ -445,6 +501,10 @@ void ServerSUT::thInstanceConsumer(int index, int root) {
     places[i] = (root + i);
 
   thCtrl.setAffinityPlaces(places).pinThreads();
+
+  if (warmup_iter_ > 0)
+    warmup(which, warmup_iter_, Consumer);
+
   Queue_t snippet;
 
   // Wait for work
@@ -454,58 +514,68 @@ void ServerSUT::thInstanceConsumer(int index, int root) {
     std::ofstream out(log_name);
   }
 
-  if (warmup_iter_ > 0)
-    warmup(which, warmup_iter_, Consumer);
-
   {
     auto guard_ = std::make_unique<ProfileRecord>((profiler_iter_ > 0), log_name);
 
-    int nIteration = 0;
     int32_t dequeue_size;
 
     std::vector<mlperf::QuerySample> samples(mThreshold_);
     rnnt::PipelineState state (mThreshold_, split_len_, mResponseThreshold_);
 
+    int nIteration = 0;
+    // long dequeue_dur = 0, batch_dur = 0, encoder_dur = 0, decoder_dur = 0, response_dur = 0;
     while (true) {
+      // mlperf::PerfClock::time_point iter_start = mlperf::PerfClock::now();
       std::vector<std::tuple<mlperf::QuerySample, at::Tensor, at::Tensor>> dequeue_list(mThreshold_);
       dequeue_size = 0;
 
       bool finish_dequeue = false;
       while (!mStop_ && dequeue_size == 0 && !finish_dequeue) {
-        if (finish_produce_ && mQueueProcessed_.size_approx() == 0) {
+        if (finish_produce_ && mProcessedQueue_.size_approx() == 0) {
           finish_dequeue = true;
           break;
         }
-        dequeue_size = mQueueProcessed_.wait_dequeue_bulk_timed(dequeue_list.begin(), state.finish_size_, 0); 
+        dequeue_size = mProcessedQueue_.wait_dequeue_bulk_timed(dequeue_list.begin(), state.finish_size_, 0);
       }
+      // auto dequeue_end = mlperf::PerfClock::now();
+      // dequeue_dur = get_duration(iter_start, dequeue_end);
 
       if (mStop_ || (finish_dequeue && state.remain_size_ == 0)) {
         std::cout << "Consumer " << index << " finish iteration " << nIteration << std::endl << std::flush;
         break;
       }
 
-      // std::cout << "Consumer " << index << "::start server iteration " << nIteration
-      //     << ", dequeue(" << dequeue_size << ")/require(" << state.finish_size_ << ")"
-      //     << ", current queue size: " << mQueueProcessed_.size_approx() << std::endl << std::flush;
+      // std::cout << "Consumer," << index << ",iter," << nIteration
+      //     << ",dequeue," << dequeue_size << ",require," << state.finish_size_
+      //     << ",queue," << mProcessedQueue_.size_approx() << std::endl << std::flush;
 
       state.update(dequeue_list, samples, dequeue_size, split_len_);
+      // auto batch_end = mlperf::PerfClock::now();
+      // batch_dur = get_duration(dequeue_end, batch_end);
       // std::cout << "finish update" << std::endl << std::flush;
       inferEncoder(which, state);
+      // auto encoder_end = mlperf::PerfClock::now();
+      // encoder_dur = get_duration(batch_end, encoder_end);
       // std::cout << "finish encoder" << std::endl << std::flush;
       inferDecoder(which, state);
+      // auto decoder_end = mlperf::PerfClock::now();
+      // decoder_dur = get_duration(encoder_end, decoder_end);
       // std::cout << "finish decoder" << std::endl << std::flush;
 
-      QuerySamplesComplete(samples, state, state.finish_idx_, index);
+      QuerySamplesComplete(samples, state);
+      // auto response_end = mlperf::PerfClock::now();
+      // response_dur = get_duration(response_end, decoder_end);
       // std::cout << "finish response" << std::endl << std::flush;
 
       if (profiler_iter_ != -1 && nIteration >= profiler_iter_)
         guard_->~ProfileRecord();
 
-      // auto last_remain_size = state.batch_size_ - state.dequeue_size_ - state.padded_size_;
-      // std::cout << "Consumer " << index << "::finish iteration " << nIteration << ", "
-      //     << "bs(" << state.batch_size_ << ")=finish(" << state.finish_size_ << ")+remain(" << state.remain_size_
-      //     << ")=last_remain(" << last_remain_size << ")+dequeue(" << state.dequeue_size_ << ")+padded(" << state.padded_size_ << ")"
-      //     << ", current queue size: " << mQueueProcessed_.size_approx() << std::endl << std::flush;
+      // std::cout << "Consumer," << index << ",iter," << nIteration
+      //     << ",infer," << state.batch_size_ << ",finish," << state.finish_size_ << ",remain," << state.remain_size_
+      //     << ",pad," << state.padded_size_ << ",dequeue," << state.dequeue_size_
+      //     << ",lqueue," << mQueue_.size() << ",pqueue," << mProcessedQueue_.size_approx() 
+      //     << ",deq," << dequeue_dur << ",batch," << batch_dur << ",enc," << encoder_dur << ",dec," << decoder_dur
+      //     << ",response," << response_dur << std::endl << std::flush;
 
       // dequeue_list.clear();
       nIteration += 1;
@@ -515,22 +585,22 @@ void ServerSUT::thInstanceConsumer(int index, int root) {
 
 void ServerSUT::QuerySamplesComplete(
     const std::vector<mlperf::QuerySample>& samples,
-    const rnnt::PipelineState& state,
-    const at::Tensor& finish_idx,
-    int index) {
+    const rnnt::PipelineState& state) {
   std::vector<mlperf::QuerySampleResponse> responses(state.finish_size_ - state.padded_size_);
   auto res_lens = state.res_idx_ + 1;
 
   size_t j = 0;
   for (size_t i = 0; i < samples.size(); ++i) {
     auto res_len = res_lens[i].item().toInt();
-    if (finish_idx[i].item().toBool() && state.F_lens_[i].item().toInt() > 0) {
+    if (state.finish_idx_[i].item().toBool() && state.F_lens_[i].item().toInt() > 0) {
       responses[j].id = samples[i].id;
       responses[j].data = reinterpret_cast<uintptr_t>(state.res_[i].data_ptr());
       responses[j].size = res_len * 4;
       ++j;
+      auto latency = get_latency(samples[i]);
+      if (latency >= 1000)
+        std::cout << "finish sample " << samples[i].id << ", len " << state.F_lens_[i].item().toInt() << " ,cost " << latency << " ms\n" << std::flush;
       // std::cout << samples[i].index << "::" << models::TorchModel::sequence_to_string(state.res_[i], res_len) << std::endl << std::flush;
-      // std::cout << "Consumer " << index << " finish sample " << samples[i].id << ", cost " << get_duration(samples[i]) << " ms\n" << std::flush;
     }
   }
   mlperf::QuerySamplesComplete(responses.data(), responses.size());
