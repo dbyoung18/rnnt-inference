@@ -30,7 +30,7 @@ add_subdirectory(mlperf_plugins)
 
 add_executable(rnnt_inference
   csrc/torch_sut.cpp csrc/rnnt_qsl.cpp csrc/metadata.cpp
-  csrc/kmp_launcher.cpp csrc/hw_topology.cpp csrc/main.cpp)
+  csrc/kmp_launcher.cpp csrc/hw_topology.cpp csrc/main.cpp csrc/utils.cpp)
 set_property(TARGET rnnt_inference PROPERTY CXX_STANDARD 14)
 
 message("Extra Torch C++ flags: ${TORCH_CXX_FLAGS}")

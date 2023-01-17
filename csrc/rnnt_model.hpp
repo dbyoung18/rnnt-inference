@@ -51,25 +51,37 @@ public:
     return model;
   }
 
-  void inference_at (int socket, State& state) {
-    transcription_encode(socket, state);
-    greedy_decode(socket, state);
+  void forward (int socket, State& state) {
+    encode(socket, state);
+    decode(socket, state);
     return;
   }
 
-  void transcription_encode (int socket, State& state) {
-    auto trans_res = socket_model_[socket].transcription(
-        {state.f_, state.f_lens_, state.pre_hx_, state.pre_cx_, state.post_hx_, state.post_cx_}).toTuple()->elements();
-    state.f_ = trans_res[0].toTensor();
-    state.pre_hx_  = trans_res[1].toTensorVector();
-    state.pre_cx_  = trans_res[2].toTensorVector();
-    state.post_hx_  = trans_res[3].toTensorVector();
-    state.post_cx_  = trans_res[4].toTensorVector();
+  template <class T>
+  void encode (int socket, T& state) {
+    if (state.split_len_ != -1) {
+      // accumulate transcription
+      rnnt::TensorVector fi_list;
+      fi_list.reserve(rnnt::HALF_MAX_FEA_LEN);
+      while(state.next()) {
+        state.f_ = socket_model_[socket].transcription(
+              {state.f_, state.f_lens_, state.pre_hx_, state.pre_cx_, state.post_hx_, state.post_cx_}
+            ).toTuple()->elements()[0].toTensor();
+        fi_list.emplace_back(state.f_);
+      }
+      state.f_ = torch::cat(fi_list, 0);
+    } else {
+      state.f_ = socket_model_[socket].transcription(
+            {state.f_, state.f_lens_, state.pre_hx_, state.pre_cx_, state.post_hx_, state.post_cx_}
+          ).toTuple()->elements()[0].toTensor();
+    }
+    state.f_lens_ = torch::ceil(state.infer_lens_ / rnnt::STACK_TIME_FACTOR).to(torch::kInt32);
   }
 
-  void greedy_decode (int socket, State& state) {
+  template <class T>
+  void decode (int socket, T& state) {
     auto model = socket_model_[socket];
-    // init flags
+    // 1. init flags
     auto symbols_added = torch::zeros(state.batch_size_, torch::dtype(torch::kInt32));
     auto time_idx = torch::zeros(state.batch_size_, torch::dtype(torch::kInt32));
     auto fi = state.f_[0];

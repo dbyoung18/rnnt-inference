@@ -6,6 +6,7 @@
 #include <list>
 #include <torch/csrc/jit/serialization/import_read.h>
 #include <query_sample_library.h>
+#include "metadata.hpp"
 
 namespace rnnt {
 namespace qsl {
@@ -56,6 +57,8 @@ public:
       x_lens_set_.at(index),
     };
   }
+
+  std::tuple<at::Tensor, at::Tensor> GenerateDummySamples (long batch_size, bool processor = true);
 
   Stack AssembleSamples(std::vector<QuerySampleIndex> indices, bool processor = true, int padded_batch_size = 1) const;
 

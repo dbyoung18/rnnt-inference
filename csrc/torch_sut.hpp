@@ -21,20 +21,8 @@
 #include "rnnt_model.hpp"
 #include "rnnt_processor.hpp"
 #include "blockingconcurrentqueue.h"
-#include <torch/csrc/autograd/profiler_legacy.h>
 
 namespace rnnt {
-class ProfileRecord {
-public:
-  ProfileRecord (bool is_record, const std::string& profiler_file);
-  virtual ~ProfileRecord(){};
-
-private:
-  bool is_record_;
-  std::string profiler_file_;
-  std::unique_ptr<torch::autograd::profiler::RecordProfile> torch_profiler;
-};
-
 class BaseSUT : public mlperf::SystemUnderTest {
 public:
   using Queue_t = std::list<mlperf::QuerySample>;
@@ -65,14 +53,6 @@ public:
   void IssueQuery(const std::vector<mlperf::QuerySample>& samples) override;
 
   void FlushQueries() override {}
-
-  std::tuple<at::Tensor, at::Tensor> inferProcessor(int which, qsl::Stack wav_stack);
-
-  template <class T>
-  void inferEncoder(int which, T& state);
-
-  template <class T>
-  void inferDecoder(int which, T& state);
 
   // for Processor: test only
   static void QuerySamplesComplete(
@@ -164,7 +144,7 @@ public:
 
 private:
   void FlushQueries() override {
-    finish_produce_ = true;
+    finish_enqueue_ = true;
     std::cout << "finish produce" << std::endl << std::flush;
   }
 
@@ -192,25 +172,6 @@ private:
   size_t mProThreshold_;
   size_t mResponseThreshold_;
   moodycamel::BlockingConcurrentQueue<std::tuple<mlperf::QuerySample, at::Tensor, at::Tensor>> mProcessedQueue_;
-  bool finish_produce_ = false;
+  bool finish_enqueue_ = false;
 };
-
-  struct SampleRecord {
-    long sample_id_;
-    long sample_idx_;
-    long latency_;
-    int sample_len_;
-    long processor_dur_;
-    long encoder_dur_;
-    long decoder_dur_;
-    long mQueue_dur_;
-    long mProcessedQueue_dur_;
-
-    SampleRecord() {};
-
-    SampleRecord(long sample_id, long sample_idx) {
-      sample_id_ = sample_id;
-      sample_idx_ = sample_idx;
-    };
-  };
 }  // namespace rnnt

@@ -26,13 +26,19 @@ public:
   }
 
   template <typename... Args>
-  at::IValue inference(Args&&... args) {
-    return model_.forward(std::forward<Args>(args)...);
+  std::tuple<at::Tensor, at::Tensor> forward(Args&&... args) {
+    auto res = model_.forward(std::forward<Args>(args)...).toTuple()->elements();
+    auto fea = res[0].toTensor();
+    auto fea_lens = res[1].toTensor();
+    return {fea, fea_lens};
   }
 
   template <typename... Args>
-  at::IValue inference_at(int socket, Args&&... args) {
-    return socket_model_[socket].forward(std::forward<Args>(args)...);
+  std::tuple<at::Tensor, at::Tensor> forward(int socket, Args&&... args) {
+    auto res = socket_model_[socket].forward(std::forward<Args>(args)...).toTuple()->elements();
+    auto fea = res[0].toTensor();
+    auto fea_lens = res[1].toTensor();
+    return {fea, fea_lens};
   }
 
 private:

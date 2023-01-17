@@ -5,6 +5,7 @@ build/
 build_dbg/
 inference/
 llvm-project/
+mlperf_plugins/onednn
 mlperf-rnnt-librispeech
 pytorch/
 third_party/

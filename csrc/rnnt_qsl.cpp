@@ -141,9 +141,21 @@ Queue_t RNNTQuerySampleLibrary::Sort(
   return result;
 }
 
-//
+// Genearte dummy samples for warmup
+std::tuple<at::Tensor, at::Tensor> RNNTQuerySampleLibrary::GenerateDummySamples (long batch_size, bool processor) {
+  at::Tensor x, x_lens;
+  if (processor) {
+    x = at::randn({batch_size, rnnt::MAX_WAV_LEN});
+    x_lens = at::full({batch_size}, rnnt::MAX_WAV_LEN, torch::kInt32);
+  } else {
+    x = at::randn({batch_size, rnnt::PADDED_INPUT_SIZE, rnnt::MAX_FEA_LEN});
+    x_lens = at::full({batch_size}, rnnt::MAX_FEA_LEN, torch::kInt32);
+  }
+  return {x, x_lens};
+}
+
+
 // Assemble samples into larger batch
-//
 Stack RNNTQuerySampleLibrary::AssembleSamples(
     std::vector<QuerySampleIndex> indices, bool processor, int padded_batch_size) const {
   long actual_batch_size = indices.size();
@@ -159,7 +171,7 @@ Stack RNNTQuerySampleLibrary::AssembleSamples(
   if (processor) {
     x = at::zeros({actual_batch_size, maxLength}, x_set_[tmp_idx].options());
   } else {
-    x = at::zeros({maxLength, padded_batch_size, x_set_[tmp_idx].size(1)}, x_set_[tmp_idx].options());
+    x = at::zeros({maxLength, padded_batch_size, rnnt::PADDED_INPUT_SIZE}, x_set_[tmp_idx].options());
     x_lens = at::pad(x_lens, {0, padded_batch_size - actual_batch_size}, "constant", 0);
   }
 
@@ -171,7 +183,7 @@ Stack RNNTQuerySampleLibrary::AssembleSamples(
     if (processor) {
       x.narrow(0, i, 1).narrow(1, 0, len).copy_(xi);
     } else {
-      x.index_put_({at::indexing::Slice(0, len), i, "..."}, xi);
+      x.index_put_({at::indexing::Slice(0, len), i, at::indexing::Slice(0, rnnt::TRANS_INPUT_SIZE)}, xi);
     }
   }
   return Stack {x, x_lens};
