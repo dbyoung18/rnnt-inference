@@ -2,6 +2,7 @@ import os
 import sys
 import torch
 
+
 script_dir = os.path.dirname(os.path.realpath(__file__))
 
 if sys.platform == 'darwin':

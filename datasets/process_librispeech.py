@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 # Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,13 +13,18 @@
 # limitations under the License.
 
 import os
+import sys
+sys.path.insert(0, os.path.join(os.getcwd(), '../'))
+
 import multiprocessing
 import functools
-
 import sox
+import torch
+import torch.nn as nn
 
-
+from datasets.parts.features import FeatureFactory
 from tqdm import tqdm
+from typing import Tuple
 
 
 def process(data, input_dir, dest_dir, dest_list, target_sr=None, speed=None,
@@ -72,7 +76,6 @@ def process(data, input_dir, dest_dir, dest_list, target_sr=None, speed=None,
 
     return output_dict
 
-
 def parallel_process(dataset, input_dir, dest_dir, dest_list, target_sr, speed, overwrite, parallel):
     with multiprocessing.Pool(parallel) as p:
         func = functools.partial(process,
@@ -84,3 +87,16 @@ def parallel_process(dataset, input_dir, dest_dir, dest_list, target_sr, speed, 
             if data != None:
                 result.append(data)
         return result
+
+
+class AudioProcessing(nn.Module):
+
+    def __init__(self, run_mode, **kwargs):
+        nn.Module.__init__(self)    # For PyTorch API
+        self.optim_level = kwargs.get('optimization_level', 0)
+        kwargs['pad_out_feat'] = True if run_mode == 'quant' else False
+        self.featurizer = FeatureFactory.from_config(kwargs)
+
+    def forward(self, wavs: torch.Tensor, wav_lens: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        feas, fea_lens = self.featurizer(wavs, wav_lens)
+        return feas, fea_lens

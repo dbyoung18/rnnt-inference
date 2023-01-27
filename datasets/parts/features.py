@@ -13,12 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Tuple
-
+import librosa
+import math
 import torch
 import torch.nn as nn
-import math
-import librosa
+
+from typing import Tuple
 from .segment import AudioSegment
 from utils import *
 

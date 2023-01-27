@@ -25,8 +25,7 @@ echo '==> Building mlperf-loadgen'
 git clone --recurse-submodules https://github.com/mlcommons/inference.git
 pushd inference
 git checkout r2.1
-git submodule sync
-git submodule update --init --recursive
+git submodule sync && git submodule update --init --recursive
 pushd loadgen
 CFLAGS="-std=c++14" python setup.py install
 popd
@@ -60,8 +59,7 @@ pushd pytorch
 git checkout v1.12.0
 pip install setuptools==59.5.0
 pip install -r requirements.txt
-git submodule sync
-git submodule update --init --recursive
+git submodule sync && git submodule update --init --recursive
 pushd third_party/ideep/mkl-dnn
 git apply ${HOME_DIR}/patches/clang_mkl_dnn.patch
 popd
@@ -70,8 +68,7 @@ CC=clang CXX=clang++ USE_CUDA=OFF python -m pip install -e .
 popd
 
 echo '==> Building mlperf_plugins, C++ loadgen & SUT'
-git submodule sync
-git submodule update --init --recursive
+git submodule sync && git submodule update --init --recursive
 mkdir build
 pushd build
 cmake -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DBUILD_TPPS_INTREE=ON -DCMAKE_PREFIX_PATH="$(dirname $(python3 -c 'import torch; print(torch.__file__)'));../cmake/Modules" -GNinja -DUSERCP=ON -DCMAKE_BUILD_TYPE=Release ..
@@ -82,4 +79,3 @@ popd
 rm -rf ${CONDA_PREFIX}/lib/cmake/mkl/*
 
 set +x
-

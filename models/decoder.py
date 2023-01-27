@@ -1,11 +1,10 @@
 import os
 import torch
+import _C as P
+
 from config import RNNTParam
 from torch import Tensor
-from typing import List
 from utils import *
-import _C as P
-import numpy as np
 
 
 class GreedyDecoder(torch.nn.Module):
@@ -143,32 +142,3 @@ class GreedyDecoder(torch.nn.Module):
             if finish:
                 break
         return self.res
-
-    def _dump_tensors(self, **kwargs):
-        torch.set_printoptions(precision=10)
-        s = f"step: {self.step}\n"
-        # s += f"trace: {self.trace}\n"
-        avg_freq = [sum(self.trace[batch_idx]) / len(self.trace[batch_idx]) if len(self.trace[batch_idx]) != 0 else 0 for batch_idx in range(self.batch_size)]
-        s += f"avg update_g frequence: {avg_freq}\n"
-        s += f"max update_g steps: {max(max(self.trace))}\n"
-        s += f"symbols_added: {self.symbols_added}\n"
-        s += f"time_idx: {self.time_idx}\n"
-        if kwargs.get('f_lens') != None:
-            s+= f"f_lens: {kwargs.get('f_lens')}\n"
-        s += f"finish: {self.finish}\n"
-        s += f"update_g: {self.update_g}\n"
-        s += f"update_f: {self.update_f}\n"
-        s += f"pre_g: {self.pre_g}\n"
-        s += f"pre_hg.sum: {self.pred_state[0].contiguous().sum()}\n"
-        s += f"pre_cg.sum: {self.pred_state[1].contiguous().sum()}\n"
-        if kwargs.get('fi') != None:
-            s += f"fi.sum: {kwargs.get('fi').contiguous().sum()}\n"
-        s += f"pre_hx.sum: {self.pre_state[0].contiguous().sum()}\n"
-        s += f"pre_cx.sum: {self.pre_state[1].contiguous().sum()}\n"
-        s += f"post_hx.sum: {self.post_state[0].contiguous().sum()}\n"
-        s += f"post_cx.sum: {self.post_state[1].contiguous().sum()}\n"
-        if kwargs.get('y') != None:
-            s += f"y.sum: {kwargs.get('y').contiguous().sum()}\n"
-        s += "".join([f"{batch_idx}: {seq_to_sen(self.res[batch_idx], self.res_idx[batch_idx])}\n" for batch_idx in range(self.batch_size)])
-        print(s)
-        print('-'*30)

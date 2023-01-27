@@ -6,9 +6,9 @@ import array
 import mlperf_loadgen as lg
 import toml
 import torch
-
 import _C as P
-from datasets.processing import AudioProcessing
+
+from datasets.process_librispeech import AudioProcessing
 from decoder import GreedyDecoder
 from rnnt_qsl import RNNTQSL
 from tqdm import tqdm
@@ -101,4 +101,3 @@ class PytorchSUT:
     def __del__(self):
         lg.DestroySUT(self.sut)
         print("Finished destroying SUT.")
-

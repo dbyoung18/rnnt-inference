@@ -1,4 +1,3 @@
-import os
 import torch
 import _C as P
 
@@ -7,7 +6,7 @@ from torch import Tensor
 from torch.nn import functional as F
 from torch.nn.parameter import Parameter
 from typing import List, Optional, Tuple
-import numpy as np
+
 
 class iLSTM(torch.nn.LSTM):
     def __init__(self, input_size, hidden_size, num_layers, skip_quant_y, **kwargs):

@@ -177,6 +177,7 @@ def transpose_tile_weight(weight, padding: bool = False):
 
     return weight
 
+
 class WeightQuantizer(TensorQuantizer):
     def __init__(self, quant_desc=QuantDescriptor(), **kwargs):
         super(WeightQuantizer, self).__init__(quant_desc)
@@ -211,4 +212,3 @@ class WeightQuantizer(TensorQuantizer):
         elif self._mode == "fake_quant":
             outputs = self._fake_quant_forward(inputs)
         return outputs
-

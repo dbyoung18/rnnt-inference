@@ -1,6 +1,6 @@
 import mlperf_loadgen as lg
-import numpy as np
 import torch
+
 
 class RNNTQSL:
     def __init__(self, dataset_dir, perf_count=None):
@@ -32,4 +32,3 @@ class RNNTQSL:
     def __del__(self):
         lg.DestroyQSL(self.qsl)
         print("Finished destroying QSL.")
-

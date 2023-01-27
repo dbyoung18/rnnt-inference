@@ -1,7 +1,7 @@
 import logging
-import numpy as np
 import os
 import torch
+
 from _C import *
 
 
@@ -69,33 +69,3 @@ def jit_model(model):
     model.update = jit_module(model.update)
     model = jit_module(model, False)
     return model
-
-def parse_calib(calib_path):
-    if not os.path.exists(calib_path):
-        return
-
-    with open(calib_path, "rb") as calib_file:
-        lines = calib_file.read().decode('ascii').splitlines()
-
-    calib_dict = {}
-    for line in lines:
-        split = line.split(':')
-        if len(split) != 2:
-            continue
-        tensor = split[0]
-        calib_dict[tensor] = np.uint32(int(split[1], 16)).view(np.dtype('float32')).item()
-    return calib_dict
-
-def save_calib(calib_path, model):
-    calib_dict = {}
-    for name, layer in model.rnnt.named_children():
-        for sub_name, sub_layer in layer.named_children():
-            if isinstance(sub_layer, torch.nn.LSTM):
-                for layer in range(sub_layer.num_layers):
-                    calib_dict[f"{sub_name}_{layer}"] = sub_layer._input_quantizers[layer]._calibrator.get_amax()
-            if hasattr(sub_layer, "_input_quantizer"):
-                calib_dict[sub_name] = sub_layer._input_quantizer.scale.item()
-    with open(calib_path, 'w') as calib_file:
-        json.dump(calib_dict, calib_file, indent=4)
-    return calib_dict
-

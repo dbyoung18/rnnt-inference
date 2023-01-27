@@ -3,11 +3,11 @@ import torch.nn.functional as F
 import _C as P
 
 from config import RNNTParam
+from quant_lstm import QuantLSTM, iLSTM
+from quant_modules import transpose_tile_weight_bf16
 from torch import Tensor
 from torch.nn import Linear
 from torch.nn.parameter import Parameter
-from quant_lstm import QuantLSTM, iLSTM
-from quant_modules import transpose_tile_weight_bf16
 from typing import List, Tuple
 from utils import *
 

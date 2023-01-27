@@ -34,4 +34,4 @@ You can also use the following command to start with your custom conda-env/work-
 ```
   ./run.sh [CONDA_ENV] [WORK_DIR] [STAGE]
 ```
-* Currently, only support Offline scenario.
+

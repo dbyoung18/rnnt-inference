@@ -1,4 +1,3 @@
-import os
 import torch
 import _C as P
 
@@ -56,4 +55,3 @@ class iLinear(QuantLinear):
     def forward(self, x: Tensor) -> Tensor:
         y = P.linear(x, self.weight, self.bias, self.o_scale.item(), None)
         return y
-

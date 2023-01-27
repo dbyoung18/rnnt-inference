@@ -8,6 +8,7 @@ from pytorch_sut import PytorchSUT
 from tqdm import tqdm
 from utils import *
 
+
 scenario_map = {
     "SingleStream": lg.TestScenario.SingleStream,
     "Offline": lg.TestScenario.Offline,
@@ -70,4 +71,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
