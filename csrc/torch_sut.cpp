@@ -515,11 +515,11 @@ void ServerSUT::thConsumer(int index, int root) {
       model_.encode(which, state);
       // auto encoder_end = mlperf::PerfClock::now();
       // encode_dur = get_duration(batch_end, encoder_end);
-      // std::cout << "finish encoder" << std::endl << std::flush;
+      // std::cout << "finish encode" << std::endl << std::flush;
       model_.decode(which, state);
       // auto decoder_end = mlperf::PerfClock::now();
       // decode_dur = get_duration(encoder_end, decoder_end);
-      // std::cout << "finish decoder" << std::endl << std::flush;
+      // std::cout << "finish decode" << std::endl << std::flush;
 
       QuerySamplesComplete(samples, state);
       // auto response_end = mlperf::PerfClock::now();

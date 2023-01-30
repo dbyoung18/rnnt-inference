@@ -18,7 +18,6 @@ sys.path.insert(0, os.path.join(os.getcwd(), '../'))
 
 import multiprocessing
 import functools
-import sox
 import torch
 import torch.nn as nn
 
@@ -29,6 +28,7 @@ from typing import Tuple
 
 def process(data, input_dir, dest_dir, dest_list, target_sr=None, speed=None,
                overwrite=True):
+    import sox
     speed = speed or []
     speed.append(1)
     speed = list(set(speed))  # Make uniqe

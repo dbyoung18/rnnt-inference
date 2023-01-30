@@ -95,6 +95,7 @@ void PipelineState::init (int32_t batch_size, int32_t split_len) {
   F_lens_ = torch::empty({batch_size_}, torch::kInt32);
   infer_lens_ = torch::empty({batch_size_}, torch::kInt32);
   split_idx_ = torch::empty({batch_size_}, torch::kInt32);
+  eos_idx_ = torch::full({batch_size_}, (MAX_FEA_LEN + split_len - 1) / split_len - 1, torch::kInt32);
 }
 
 void PipelineState::update (
@@ -165,7 +166,7 @@ bool PipelineState::next () {
     for (int32_t i = 0; i < batch_size_; ++i)
       f_list.emplace_back(f_split_[split_idx_[i].item().toInt()].index({Slice(), i, Slice()}));
     f_ = torch::stack(f_list, 1);
-    split_idx_ += 1;
+    split_idx_ = torch::min(eos_idx_, split_idx_+1);
     remain_lens_ -= f_lens_;
     infer_lens_ += f_lens_;
     finish_idx_ = remain_lens_.le(0);

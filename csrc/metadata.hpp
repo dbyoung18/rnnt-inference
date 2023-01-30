@@ -27,7 +27,7 @@ enum Params {
   BLANK = 28,
   MAX_SYMBOLS_PER_STEP = 30,
   MAX_WAV_LEN = 240000,
-  MAX_FEA_LEN = 500,
+  MAX_FEA_LEN = 512,
   HALF_MAX_FEA_LEN = 250,
   PADDED_INPUT_SIZE = 256
 };
@@ -101,6 +101,7 @@ public:
   at::Tensor F_lens_;
   // infer index
   at::Tensor split_idx_;
+  at::Tensor eos_idx_;
 };
 
 }  // namespace rnnt
