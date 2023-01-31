@@ -101,11 +101,6 @@ class FilterbankFeatures(nn.Module):
         self.frame_splicing = frame_splicing
         self.pad_batch_size = pad_batch_size
 
-        BATCH_SIZE = 128
-        IN_FEAT = 80
-        OUT_FEAT = 256 if pad_out_feat else IN_FEAT * self.frame_splicing
-        OUT_LEN = 500
-
         torch_windows = {
             'hann': torch.hann_window,
             'hamming': torch.hamming_window,
@@ -133,10 +128,8 @@ class FilterbankFeatures(nn.Module):
                                   periodic=False).float() if window_fn else None
         filterbanks = torch.tensor(
             librosa.filters.mel(sr=sample_rate, n_fft=self.n_fft, n_mels=nfilt, fmin=lowfreq,
-                                fmax=highfreq), dtype=torch.float).unsqueeze(0).expand(BATCH_SIZE, -1, -1).contiguous()
-        fb_bias = torch.zeros((BATCH_SIZE, IN_FEAT, 1))
-        if self.dither > 0 and self.use_deterministic_dithering:
-            fb_bias += self.dither ** 2
+                                fmax=highfreq), dtype=torch.float).unsqueeze(0).contiguous()
+        fb_bias = torch.zeros((1, filterbanks.shape[1], 1))
         if self.log:
             fb_bias += 1e-20
         self.register_buffer("fb", filterbanks)
@@ -147,10 +140,15 @@ class FilterbankFeatures(nn.Module):
             (max_duration * sample_rate - self.win_length) / self.hop_length
         )
         max_pad = 16 - (max_length % 16)
-        self.max_length = max_length + max_pad
-        self.output_shape = torch.zeros((1, OUT_FEAT, OUT_LEN))
-        self.norm_weight = torch.ones((BATCH_SIZE, OUT_FEAT, OUT_LEN))
-        self.norm_bias = torch.zeros((BATCH_SIZE, OUT_FEAT, OUT_LEN))
+        self.max_length = max_length + max_pad # 1680
+
+        self.in_feat = filterbanks.shape[1] # 80
+        self.out_feat = self.in_feat * self.frame_splicing # 240
+        if pad_out_feat:
+            self.out_feat = ((self.out_feat - 1) // 32 + 1) * 32 # 256
+        self.output_shape = torch.zeros((1, self.out_feat, self.max_length))
+        self.norm_weight = torch.ones((1, self.out_feat, self.max_length))
+        self.norm_bias = torch.zeros((1, self.out_feat, self.max_length))
 
     def get_seq_len(self, seq_len):
         seq_len = torch.ceil(seq_len / self.hop_length).to(dtype=torch.int32)
@@ -176,8 +174,8 @@ class FilterbankFeatures(nn.Module):
             win_length=self.win_length,
             center=False, window=self.window,
             return_complex=False)
-        actual_freq = x.shape[1]
-        actual_out_len = x.shape[2]
+        actual_freq = x.shape[1] # 257
+        actual_out_len = x.shape[2] # <1500
         x = x.permute(0, 2, 1, 3)
         x = x.view(actual_bs, actual_freq * actual_out_len, 2)
 
@@ -185,11 +183,11 @@ class FilterbankFeatures(nn.Module):
         x = torch.ops.intel_mlperf.power_spectrum(x)
         x = x.reshape(actual_bs, actual_out_len, actual_freq).permute(0, 2, 1)
 
-        # if self.dither > 0 and self.use_deterministic_dithering:
-            # x = x + self.dither ** 2
+        if self.dither > 0 and self.use_deterministic_dithering:
+            x += self.dither ** 2
         # dot with filterbank energies
         # fb(N, IN_FEAT, FREQ) * x(N, FREQ, OUT_LEN * 3)
-        x = torch.baddbmm(self.fb_bias[:actual_bs], self.fb[:actual_bs], x)
+        x = torch.baddbmm(self.fb_bias.expand(actual_bs, -1, -1), self.fb.expand(actual_bs, -1, -1), x)
 
         # log features if required
         if self.log:
