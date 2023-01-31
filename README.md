@@ -7,9 +7,10 @@
   GCC >= 11
 ```
 
-## Steps to run RNNT
+## Steps to run RNNT with three options
 
-### 1. Install anaconda 3.0
+### Option 1: Run on bare metal
+#### 1. Install anaconda 3.0
 ```
   wget https://repo.continuum.io/archive/Anaconda3-5.0.0-Linux-x86_64.sh -O anaconda3.sh
   chmod +x anaconda3.sh
@@ -17,7 +18,7 @@
   export PATH=~/anaconda3/bin:$PATH
 ```
 
-### 2. End-to-end run inference
+#### 2. End-to-end run inference
 Execute `run.sh`. The end-to-end process including:
 | STAGE(default -2) | STEP |
 |  -  | -  |
@@ -35,3 +36,23 @@ You can also use the following command to start with your custom conda-env/work-
   ./run.sh [CONDA_ENV] [WORK_DIR] [STAGE]
 ```
 
+### Option 2: Build docker container
+```
+  cd docker
+  bash build_rnnt-99_container.sh
+  docker run --name intel_rnnt --privileged -itd -v /data/mlperf_data:/data/mlperf_data --net=host --ipc=host mlperf_inference_rnnt:3.0
+  docker ps -a #get container "id"
+  docker exec -it <id> bash
+  cd /opt/workdir/rnnt/pytorch-cpu
+  SKIP_BUILD=1 STAGE=0 bash run.sh
+```
+
+### Option 3: Pull docker image
+```
+  <TBD: command to pull docker>
+  docker run --name intel_rnnt --privileged -itd -v /data/mlperf_data:/data/mlperf_data --net=host --ipc=host mlperf_inference_rnnt:3.0
+  docker ps -a #get container "id"
+  docker exec -it <id> bash
+  cd /opt/workdir/rnnt/pytorch-cpu
+  SKIP_BUILD=1 STAGE=0 bash run.sh
+```

@@ -6,12 +6,17 @@ set -ex
 : ${WORK_DIR=${2:-${PWD}/mlperf-rnnt-librispeech}}
 : ${LOCAL_DATA_DIR=${WORK_DIR}/local_data}
 : ${STAGE=${3:-2}}
+: ${SKIP_BUILD=${4:-0}}
 
 mkdir -p ${WORK_DIR}
 
 if [[ ${STAGE} -le -2 ]]; then
   echo '==>Preparing conda env'
   conda create -y -n ${CONDA_ENV} python=3.8
+fi
+
+if [[ ${SKIP_BUILD} -eq 0 ]]; then
+  source activate ${CONDA_ENV}
 fi
 
 if [[ ${STAGE} -le -1 ]]; then

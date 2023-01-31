@@ -24,7 +24,13 @@ export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:per
 SUT_DIR=$(pwd)
 EXECUTABLE=${SUT_DIR}/build/rnnt_inference
 WORK_DIR=${SUT_DIR}/mlperf-rnnt-librispeech
-OUT_DIR="${SUT_DIR}/logs/${SCENARIO}_${VERSION}_${WAV}_PBS${PRO_BS}_BS${BS}_${PRO_INTER}_${PRO_INTRA}_${INTER}_${INTRA}_SL${LEN}"
+OUT_DIR="${SUT_DIR}/logs/${SCENARIO}"
+OUT_DIR_NANE="${SCENARIO}_${VERSION}_${WAV}_PBS${PRO_BS}_${PRO_INTER}_${PRO_INTRA}_BS${BS}_${INTER}_${INTRA}_SL${LEN}_RESPONSE${RESPONSE}"
+if [[ ${ACCURACY} == true ]]; then
+  OUT_DIR="${OUT_DIR}/accuracy/${OUT_DIR_NANE}"
+else
+  OUT_DIR="${OUT_DIR}/performance/run_1/${OUT_DIR_NANE}"
+fi
 mkdir -p ${OUT_DIR} ${WORK_DIR}
 
 if [[ ${SCENARIO} == "Offline" ]]; then
