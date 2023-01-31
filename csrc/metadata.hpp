@@ -27,8 +27,7 @@ enum Params {
   BLANK = 28,
   MAX_SYMBOLS_PER_STEP = 30,
   MAX_WAV_LEN = 240000,
-  MAX_FEA_LEN = 512,
-  HALF_MAX_FEA_LEN = 250,
+  MAX_FEA_LEN = 500,
   PADDED_INPUT_SIZE = 256
 };
 
@@ -50,6 +49,8 @@ public:
   int32_t actual_batch_size_;
   int32_t batch_size_;
   int32_t split_len_;
+  int32_t padded_fea_len_ = MAX_FEA_LEN;
+  int32_t max_res_len_ = padded_fea_len_ / 2 * MAX_SYMBOLS_PER_STEP;
   at::Tensor split_lens_;
   // transcription
   TensorVector f_split_;

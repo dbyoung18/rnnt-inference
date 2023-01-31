@@ -59,10 +59,10 @@ public:
 
   template <class T>
   void encode (int socket, T& state) {
-    if (state.split_len_ != -1) {
+    if (state.split_len_ > 0) {
       // accumulate transcription
       rnnt::TensorVector fi_list;
-      fi_list.reserve(rnnt::HALF_MAX_FEA_LEN);
+      fi_list.reserve(state.padded_fea_len_ / 2);
       while(state.next()) {
         state.f_ = socket_model_[socket].transcription(
               {state.f_, state.f_lens_, state.pre_hx_, state.pre_cx_, state.post_hx_, state.post_cx_}

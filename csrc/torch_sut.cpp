@@ -218,14 +218,18 @@ void OfflineSUT::thInstance(int index, int root) {
       }
 
       state.update(fea, fea_lens, split_len_, actual_batch_size);
+      // std::cout << "finish update" << std::endl << std::flush;
       model_.encode(which, state);
       // auto encoder_end = mlperf::PerfClock::now();
       // encode_dur = get_duration(processor_end, encoder_end);
+      // std::cout << "finish encode" << std::endl << std::flush;
       model_.decode(which, state);
       // auto decoder_end = mlperf::PerfClock::now();
       // decode_dur = get_duration(encoder_end, decoder_end);
+      // std::cout << "finish decode" << std::endl << std::flush;
 
       QuerySamplesComplete(samples, state);
+      // std::cout << "finish response" << std::endl << std::flush;
 
       nIteration += 1;
       // std::cout << "Instance," << index << ",iter," << nIteration
@@ -375,7 +379,7 @@ void ServerSUT::thProducer(int index, int root) {
 
   {
     // auto guard_ = std::make_unique<ProfileRecord>((profiler_iter_ > 0), log_name);
-    size_t nIteration = 0;
+    // size_t nIteration = 0;
     // long dequeue_dur = 0, process_dur = 0, enqueue_dur = 0, produce_dur = 0;
     while (true) {
       // critical section
@@ -432,7 +436,7 @@ void ServerSUT::thProducer(int index, int root) {
       // if (profiler_iter_ != -1 && nIteration >= profiler_iter_)
       //   guard_->~ProfileRecord();
 
-      nIteration += 1;
+      // nIteration += 1;
       // auto latency = get_latency(samples[0]);
       // std::cout << "Producer," << index << ",iter," << nIteration
       //     << ",in," << samples.size() << ",out," << fea_lens_list.size()
