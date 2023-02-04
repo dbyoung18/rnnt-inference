@@ -24,7 +24,8 @@ popd
 echo '==> Building mlperf-loadgen'
 git clone --recurse-submodules https://github.com/mlcommons/inference.git
 pushd inference
-git checkout r2.1
+# git checkout r2.1
+git checkout b1c4cb972df6f51c5f08953dcb6f8ce5d163b41e  # inference-v3.0
 git submodule sync && git submodule update --init --recursive
 pushd loadgen
 CFLAGS="-std=c++14" python setup.py install
