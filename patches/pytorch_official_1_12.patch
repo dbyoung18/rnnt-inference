@@ -175,3 +175,26 @@ index 5c1595a292..17ad6f84b2 100644
          HINTS ${CMAKE_${LANG}_IMPLICIT_LINK_DIRECTORIES}
          DOC "libomp location for OpenMP"
        )
+diff --git a/cmake/public/mkl.cmake b/cmake/public/mkl.cmake
+index 9515a4ae96..07307e01db 100644
+--- a/cmake/public/mkl.cmake
++++ b/cmake/public/mkl.cmake
+@@ -1,4 +1,4 @@
+-find_package(MKL QUIET)
++# find_package(MKL QUIET)
+
+ if(NOT TARGET caffe2::mkl)
+   add_library(caffe2::mkl INTERFACE IMPORTED)
+diff --git a/requirements.txt b/requirements.txt
+index c9f16ce575..08a9eba042 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -6,7 +6,7 @@ numpy
+ psutil
+ pyyaml
+ requests
+-setuptools
++setuptools==65.5.1
+ six
+ types-dataclasses
+ typing_extensions

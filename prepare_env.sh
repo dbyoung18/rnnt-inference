@@ -57,18 +57,25 @@ export CMAKE_INCLUDE_PATH=${CMAKE_PREFIX_PATH}/include
 git clone https://github.com/pytorch/pytorch.git
 pushd pytorch
 git checkout v1.12.0
-pip install setuptools==59.5.0
-pip install -r requirements.txt
 git submodule sync && git submodule update --init --recursive
 pushd third_party/ideep/mkl-dnn
 git apply ${HOME_DIR}/patches/clang_mkl_dnn.patch
 popd
 git apply ${HOME_DIR}/patches/pytorch_official_1_12.patch
+pip install -r requirements.txt
 CC=clang CXX=clang++ USE_CUDA=OFF python -m pip install -e .
 popd
 
+echo '==> Preparing onednn'
+pushd mlperf_plugins
+git clone https://github.com/oneapi-src/oneDNN.git onednn
+pushd onednn
+git checkout v2.6
+popd
+popd
+
 echo '==> Building mlperf_plugins, C++ loadgen & SUT'
-git submodule sync && git submodule update --init --recursive
+#git submodule sync && git submodule update --init --recursive
 mkdir build
 pushd build
 cmake -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DBUILD_TPPS_INTREE=ON -DCMAKE_PREFIX_PATH="$(dirname $(python3 -c 'import torch; print(torch.__file__)'));../cmake/Modules" -GNinja -DUSERCP=ON -DCMAKE_BUILD_TYPE=Release ..
@@ -79,3 +86,4 @@ popd
 rm -rf ${CONDA_PREFIX}/lib/cmake/mkl/*
 
 set +x
+

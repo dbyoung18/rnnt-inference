@@ -34,7 +34,7 @@ ENV PATH /opt/conda/bin:$PATH
 
 FROM dev-base as conda
 ARG PYTHON_VERSION=3.8
-RUN curl -fsSL -v -o ~/miniconda.sh -O  https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh  && \
+RUN curl -fsSL -v -o ~/miniconda.sh -O https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh && \
     chmod +x ~/miniconda.sh && \
     ~/miniconda.sh -b -p /opt/conda && \
     rm ~/miniconda.sh && \
@@ -62,11 +62,11 @@ ENV CONDA_PREFIX "/opt/conda"
 ARG PYTORCH_VERSION=v1.12.0
 RUN git clone https://github.com/pytorch/pytorch.git && \
     cd pytorch && git checkout $PYTORCH_VERSION && \
-    pip install -r requirements.txt && pip install setuptools==59.5.0 && \
     git submodule sync && git submodule update --init --recursive && \
     cd third_party/ideep/mkl-dnn && git apply /opt/workdir/patches/clang_mkl_dnn.patch && \
     cd ../../.. && git apply /opt/workdir/patches/pytorch_official_1_12.patch && \
-    CC=clang CXX=clang++ USE_CUDA=OFF python -m pip install -e . && cd ..
+    pip install -r requirements.txt && \
+    CC=clang CXX=clang++ USE_CUDA=OFF python setup.py install && cd ..
 
 FROM build as setup
 COPY --from=build /opt/conda /opt/conda
