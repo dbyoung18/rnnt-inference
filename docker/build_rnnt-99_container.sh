@@ -12,7 +12,7 @@ export IMAGE_NAME=mlperf_inference_rnnt:${VERSION}
 
 
 echo "Building RNNT-99 workflow container"
-DOCKER_BUILDKIT=1 docker build ${DOCKER_BUILD_ARGS} -f Dockerfile -t ${IMAGE_NAME} ../../../
+DOCKER_BUILDKIT=1 docker build ${DOCKER_BUILD_ARGS} -f Dockerfile -t ${IMAGE_NAME} ../../../../
 
 
 #docker run --rm -it ${IMAGE_NAME} python -c "import torch; print('torch:', torch.__version__)"

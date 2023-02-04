@@ -9,7 +9,7 @@
 #       For reference:
 #           https://docs.docker.com/develop/develop-images/build_enhancements/
 
-ARG BASE_IMAGE=rockylinux:8.6
+ARG BASE_IMAGE=rockylinux:8.7
 FROM ${BASE_IMAGE} AS dev-base
 RUN --mount=type=cache,id=yum-dev,target=/var/cache/yum \
     DEBIAN_FRONTEND=noninteractive dnf install -y \
@@ -27,6 +27,8 @@ RUN --mount=type=cache,id=yum-dev,target=/var/cache/yum \
     perl-Data-Dumper \
     gcc-toolset-11-gcc \
     gcc-toolset-11-gcc-c++ \
+    libogg \
+    libvorbis \ 
     && rm -rf /var/lib/apt/lists/*
 RUN echo "source /opt/rh/gcc-toolset-11/enable" >> /root/.bashrc
 RUN echo "alias ll='ls -l'" >> /root/.bashrc
@@ -34,12 +36,12 @@ ENV PATH /opt/conda/bin:$PATH
 
 FROM dev-base as conda
 ARG PYTHON_VERSION=3.8
-RUN curl -fsSL -v -o ~/miniconda.sh -O https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh && \
+RUN curl -fsSL -v -o ~/miniconda.sh -O  https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh  && \
     chmod +x ~/miniconda.sh && \
     ~/miniconda.sh -b -p /opt/conda && \
     rm ~/miniconda.sh && \
     /opt/conda/bin/conda install -y python=${PYTHON_VERSION} ninja cmake jemalloc inflect libffi pandas requests toml tqdm unidecode scipy && \
-    /opt/conda/bin/conda install -c conda-forge llvm-openmp librosa && \
+    /opt/conda/bin/conda install -c conda-forge llvm-openmp librosa wheel==0.38.1 setuptools==65.5.1 future==0.18.3 && \
     /opt/conda/bin/conda install -c intel mkl mkl-include intel-openmp && \
     /opt/conda/bin/conda clean -ya && \
     pip install sox
@@ -57,7 +59,7 @@ FROM conda AS build
 COPY --from=conda /opt/conda /opt/conda
 #COPY --from=conda /opt/llvm-project /opt/llvm-project
 WORKDIR /opt/workdir
-COPY ./rnnt/pytorch-cpu/patches /opt/workdir/patches
+COPY ./code/rnnt/pytorch-cpu/patches /opt/workdir/patches
 ENV CONDA_PREFIX "/opt/conda"
 ARG PYTORCH_VERSION=v1.12.0
 RUN git clone https://github.com/pytorch/pytorch.git && \
@@ -66,16 +68,17 @@ RUN git clone https://github.com/pytorch/pytorch.git && \
     cd third_party/ideep/mkl-dnn && git apply /opt/workdir/patches/clang_mkl_dnn.patch && \
     cd ../../.. && git apply /opt/workdir/patches/pytorch_official_1_12.patch && \
     pip install -r requirements.txt && \
-    CC=clang CXX=clang++ USE_CUDA=OFF python setup.py install && cd ..
+    CC=clang CXX=clang++ USE_CUDA=OFF python setup.py install && cd .. && pip list|grep torch && rm -rf pytorch
 
 FROM build as setup
 COPY --from=build /opt/conda /opt/conda
 #COPY --from=build /opt/workdir /opt/workdir
 ARG ONEDNN_VERSION=v2.6
-ARG third_party_dir=/opt/workdir/rnnt/pytorch-cpu/third_party
+ARG third_party_dir=/opt/workdir/code/rnnt/pytorch-cpu/third_party
 WORKDIR /opt/workdir
 #COPY ./intel_inference_datacenter_v2-1 intel_inference_datacenter_v2-1
-COPY ./rnnt /opt/workdir/rnnt
+COPY ./code/rnnt /opt/workdir/code/rnnt
+COPY ./code/run_clean.sh /opt/workdir/code/run_clean.sh
 RUN if [ -d ${third_party_dir} ];then rm -rf ${third_party_dir}; fi && \
     mkdir ${third_party_dir} && cd ${third_party_dir}
 RUN wget --no-check-certificate https://ftp.osuosl.org/pub/xiph/releases/flac/flac-1.3.2.tar.xz -O flac-1.3.2.tar.xz && \
@@ -88,17 +91,18 @@ RUN wget --no-check-certificate https://sourceforge.net/projects/sox/files/sox/1
     pushd sox-14.4.2 && \
     LDFLAGS="-L${third_party_dir}/lib" CFLAGS="-I${third_party_dir}/include" ./configure --prefix=${third_party_dir} --with-flac && make && make install && \
     popd
+RUN rm flac-1.3.2.tar.xz sox-14.4.2.tar.gz 
 ENV CONDA_PREFIX "/opt/conda"
-RUN cd /opt/workdir/rnnt/pytorch-cpu/ && \
+RUN cd /opt/workdir/code/rnnt/pytorch-cpu/ && \
     if [ -d "inference" ];then rm -rf inference; fi && \
-    git clone --branch r2.1 --recursive https://github.com/mlcommons/inference.git && \
+    git clone --recursive https://github.com/mlcommons/inference.git && \
     pushd inference && git submodule sync && git submodule update --init --recursive && \
     pushd loadgen && \
     CFLAGS="-std=c++14" python setup.py install && \
     popd && \
     popd && \
-    if [ -d "onednn" ];then rm -rf onednn; fi && \
-    cd mlperf_plugins && git clone https://github.com/oneapi-src/oneDNN.git onednn && \
+    cp ./inference/mlperf.conf /opt/workdir/code/rnnt/pytorch-cpu/configs/. && \
+    cd mlperf_plugins && if [ -d "onednn" ];then rm -rf onednn; fi && git clone https://github.com/oneapi-src/oneDNN.git onednn && \
     cd onednn && git checkout ${ONEDNN_VERSION} && \
     cd ../../ && rm -rf /opt/conda/lib/cmake/mkl/* && mkdir build && cd build && \
     cmake -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DBUILD_TPPS_INTREE=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$(dirname $(python3 -c 'import torch; print(torch.__file__)'));../cmake/Modules" -GNinja -DUSERCP=ON .. && \

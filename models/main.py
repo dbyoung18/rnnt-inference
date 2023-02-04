@@ -66,7 +66,7 @@ def main():
             acc_path = os.path.join(os.getcwd(), "eval_accuracy.py")
             cmd = f"python {acc_path} --log_path {log_path} --manifest_path {args.manifest_path}"
             print(f"==> Running accuracy script: {cmd}")
-            subprocess.check_call(cmd, shell=True)
+            subprocess.check_call(cmd)
         print("Done!")
 
 if __name__ == "__main__":

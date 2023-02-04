@@ -43,7 +43,7 @@ You can also use the following command to start with your custom conda-env/work-
   docker run --name intel_rnnt --privileged -itd -v /data/mlperf_data:/data/mlperf_data --net=host --ipc=host mlperf_inference_rnnt:3.0
   docker ps -a #get container "id"
   docker exec -it <id> bash
-  cd /opt/workdir/rnnt/pytorch-cpu
+  cd /opt/workdir/code/rnnt/pytorch-cpu
   SKIP_BUILD=1 STAGE=0 bash run.sh
 ```
 
@@ -53,6 +53,6 @@ You can also use the following command to start with your custom conda-env/work-
   docker run --name intel_rnnt --privileged -itd -v /data/mlperf_data:/data/mlperf_data --net=host --ipc=host mlperf_inference_rnnt:3.0
   docker ps -a #get container "id"
   docker exec -it <id> bash
-  cd /opt/workdir/rnnt/pytorch-cpu
+  cd /opt/workdir/code/rnnt/pytorch-cpu
   SKIP_BUILD=1 STAGE=0 bash run.sh
 ```
