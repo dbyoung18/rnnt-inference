@@ -129,10 +129,9 @@ void OfflineSUT::warmup(int which, int warmup_iter) {
   rnnt::State state;
   for (int i = 0; i < warmup_iter; ++i) {
     std::tie(x, x_lens) = qsl_.GenerateDummySamples(batch_size, processor_flag_);
-    if (processor_flag_) {
+    if (processor_flag_)
       std::tie(x, x_lens) = processor_.forward(which, qsl::Stack {x, x_lens});
-      x = x.permute({2, 0, 1}).contiguous();
-    }
+    x = x.permute({2, 0, 1}).contiguous();
     state.update(x, x_lens, split_len_);
     model_.forward(which, state);
   }
@@ -231,12 +230,13 @@ void OfflineSUT::thInstance(int index, int root) {
       QuerySamplesComplete(samples, state);
       // std::cout << "finish response" << std::endl << std::flush;
 
-      nIteration += 1;
       // std::cout << "Instance," << index << ",iter," << nIteration
       //     << ",max_len," << state.f_lens_[0].item().toInt() << ",bs," << samples.size()
       //     << ",proc," << process_dur << ",enc," << encode_dur << ",dec," << decode_dur
       //     << ",lat," << get_duration(iter_start) << std::endl << std::flush;
-      if (profiler_iter_ != -1 && nIteration >= profiler_iter_)
+
+      nIteration += 1;
+      if (profiler_iter_ > 0 && nIteration >= profiler_iter_)
         guard_->~ProfileRecord();
     }
   }
@@ -371,15 +371,15 @@ void ServerSUT::thProducer(int index, int root) {
   Queue_t snippet;
 
   // Wait for work
-  // std::string log_name;
-  // if (profiler_iter_ > 1) {
-  //   log_name = profiler_folder_ + "/" + Name() + "Producer_" + std::to_string(index) + "_" + std::to_string(which) + ".json";
-  //   std::ofstream out(log_name);
-  // }
+  std::string log_name;
+  if (profiler_iter_ > 1) {
+    log_name = profiler_folder_ + "/" + Name() + "Producer_" + std::to_string(index) + "_" + std::to_string(which) + ".json";
+    std::ofstream out(log_name);
+  }
 
   {
-    // auto guard_ = std::make_unique<ProfileRecord>((profiler_iter_ > 0), log_name);
-    // size_t nIteration = 0;
+    auto guard_ = std::make_unique<ProfileRecord>((profiler_iter_ > 0), log_name);
+    size_t nIteration = 0;
     // long dequeue_dur = 0, process_dur = 0, enqueue_dur = 0, produce_dur = 0;
     while (true) {
       // critical section
@@ -433,10 +433,6 @@ void ServerSUT::thProducer(int index, int root) {
       // enqueue_dur = get_duration(process_end, enqueue_end);
       // produce_dur = get_duration(iter_start, enqueue_end);
 
-      // if (profiler_iter_ != -1 && nIteration >= profiler_iter_)
-      //   guard_->~ProfileRecord();
-
-      // nIteration += 1;
       // auto latency = get_latency(samples[0]);
       // std::cout << "Producer," << index << ",iter," << nIteration
       //     << ",in," << samples.size() << ",out," << fea_lens_list.size()
@@ -445,7 +441,10 @@ void ServerSUT::thProducer(int index, int root) {
           // << ",prod," << produce_dur << ",lat," << get_latency(samples[0])
           // << std::endl << std::flush;
       // BaseSUT::QuerySamplesComplete(samples, fea);  // Test processor only(response {N, C, T})
-      // if (mQueue_.empty()) finish_enqueue_ = true;
+
+      nIteration += 1;
+      if (profiler_iter_ > 0 && nIteration >= profiler_iter_)
+        guard_->~ProfileRecord();
     }
   }
 }
@@ -530,9 +529,6 @@ void ServerSUT::thConsumer(int index, int root) {
       // response_dur = get_duration(response_end, decoder_end);
       // std::cout << "finish response" << std::endl << std::flush;
 
-      if (profiler_iter_ != -1 && nIteration >= profiler_iter_)
-        guard_->~ProfileRecord();
-
       // std::cout << "Consumer," << index << ",iter," << nIteration
       //     << ",infer," << state.batch_size_ << ",finish," << state.finish_size_ << ",remain," << state.remain_size_
       //     << ",pad," << state.padded_size_ << ",dequeue," << state.dequeue_size_
@@ -541,8 +537,9 @@ void ServerSUT::thConsumer(int index, int root) {
       //     // << ",response," << response_dur
       //     << std::endl << std::flush;
 
-      // dequeue_list.clear();
       nIteration += 1;
+      if (profiler_iter_ > 0 && nIteration >= profiler_iter_)
+        guard_->~ProfileRecord();
     }
   }
 }
