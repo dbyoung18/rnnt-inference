@@ -19,7 +19,7 @@ SCRIPT_ARGS+=" --run_mode ${MODE}"
 SCRIPT_ARGS+=" --calibration"
 SCRIPT_ARGS+=" --manifest_path ${WORK_DIR}/local_data/wav/train-clean100-wav.json"
 if [[ ${WAV} == true ]]; then
-  SCRIPT_ARGS+=" --calib_dataset_dir ${WORK_DIR}/train-clean-100-npy.pt --toml_path configs/rnnt.toml --enable_preprocess"
+  SCRIPT_ARGS+=" --calib_dataset_dir ${WORK_DIR}/train-clean-100-npy.pt --toml_path configs/rnnt.toml --enable_process"
 else
   SCRIPT_ARGS+=" --calib_dataset_dir ${WORK_DIR}/train-clean-100-input.pt"
 fi

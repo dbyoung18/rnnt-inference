@@ -30,10 +30,8 @@ def seq_collate_fn(batch):
     Returns
     batches of tensors
     """
-    audio_lengths = torch.LongTensor([sample.waveform.size(0)
-                                      for sample in batch])
-    transcript_lengths = torch.LongTensor([sample.transcript.size(0)
-                                           for sample in batch])
+    audio_lengths = torch.IntTensor([sample.waveform.size(0) for sample in batch])
+    transcript_lengths = torch.IntTensor([sample.transcript.size(0) for sample in batch])
     permute_indices = torch.argsort(audio_lengths, descending=True)
 
     audio_lengths = audio_lengths[permute_indices]
@@ -42,10 +40,8 @@ def seq_collate_fn(batch):
         [batch[i].waveform for i in permute_indices],
         batch_first=True
     )
-    transcript_list = [batch[i].transcript
-                       for i in permute_indices]
-    packed_transcripts = torch.nn.utils.rnn.pack_sequence(transcript_list,
-                                                          enforce_sorted=False)
+    transcript_list = [batch[i].transcript for i in permute_indices]
+    packed_transcripts = torch.nn.utils.rnn.pack_sequence(transcript_list, enforce_sorted=False)
 
     # TODO: Don't I need to stop grad at some point now?
     return (padded_audio_signals, audio_lengths, transcript_list,
@@ -150,10 +146,8 @@ class AudioDataset(Dataset):
                                            offset=offset, duration=duration,
                                            trim=self.trim)
 
-        AudioSample = namedtuple('AudioSample', ['waveform',
-                                                 'transcript'])
-        return AudioSample(features,
-                           torch.LongTensor(sample["transcript"]))
+        AudioSample = namedtuple('AudioSample', ['waveform', 'transcript'])
+        return AudioSample(features, torch.IntTensor(sample["transcript"]))
 
     def __len__(self):
         return len(self.manifest)

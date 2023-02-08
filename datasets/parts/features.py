@@ -116,16 +116,13 @@ class FilterbankFeatures(nn.Module):
         self.normalize = normalize
         self.log = log
         self.dither = dither
-        self.nfilt = nfilt
         self.preemph = preemph
-        self.pad_to = pad_to
         # For now, always enable this.
         # See https://docs.google.com/presentation/d/1IVC3J-pHB-ipJpKsJox_SqmDHYdkIaoCXTbKmJmV2-I/edit?usp=sharing for elaboration
         self.use_deterministic_dithering = True
         highfreq = highfreq or sample_rate / 2
         window_fn = torch_windows.get(window, None)
-        window_tensor = window_fn(self.win_length,
-                                  periodic=False).float() if window_fn else None
+        window_tensor = window_fn(self.win_length, periodic=False).float() if window_fn else None
         filterbanks = torch.tensor(
             librosa.filters.mel(sr=sample_rate, n_fft=self.n_fft, n_mels=nfilt, fmin=lowfreq,
                                 fmax=highfreq), dtype=torch.float).unsqueeze(0).contiguous()
@@ -145,7 +142,7 @@ class FilterbankFeatures(nn.Module):
         self.in_feat = filterbanks.shape[1] # 80
         self.out_feat = self.in_feat * self.frame_splicing # 240
         if pad_out_feat:
-            self.out_feat = ((self.out_feat - 1) // 32 + 1) * 32 # 256
+            self.out_feat = (self.out_feat + 31) // 32 * 32 # 256
         self.output_shape = torch.tensor((1, self.out_feat, self.max_length), dtype=torch.int32)
         self.norm_weight = torch.ones((1, self.out_feat, self.max_length))
         self.norm_bias = torch.zeros((1, self.out_feat, self.max_length))
@@ -160,14 +157,15 @@ class FilterbankFeatures(nn.Module):
     def forward(self, x: torch.Tensor, x_lens: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         actual_bs = x.shape[0]
 
-        # dither
+        # add dither(for training)
         if self.dither > 0 and not self.use_deterministic_dithering:
             x += self.dither * torch.randn_like(x)
 
-        # do preemphasis
-        x = torch.ops.intel_mlperf.preemphasis(x, x_lens, coeff=self.preemph, pad_size=self.n_fft // 2)
+        # do preemphasis if required
+        if self.preemph is not None:
+            x = torch.ops.intel_mlperf.preemphasis(x, x_lens, coeff=self.preemph, pad_size=self.n_fft // 2)
 
-        # do stft -> (N, 257, <1500)
+        # do stft -> (N, 257, <=1500)
         x = torch.stft(
             x, n_fft=self.n_fft, hop_length=self.hop_length,
             win_length=self.win_length,
@@ -180,6 +178,7 @@ class FilterbankFeatures(nn.Module):
         x = torch.ops.intel_mlperf.power_spectrum(x, x_lens)
         x = x.permute(0, 2, 1)
 
+        # add dither(for inference)
         if self.dither > 0 and self.use_deterministic_dithering:
             x += self.dither ** 2
         # dot with filterbank energies
@@ -190,17 +189,19 @@ class FilterbankFeatures(nn.Module):
         if self.log:
             x = torch.log(x)
 
-        # frame splicing if required
-        x = torch.ops.intel_mlperf.frame_splicing(x, x_lens, self.frame_splicing)
+        # do frame splicing if required
+        if self.frame_splicing > 1:
+            x = torch.ops.intel_mlperf.frame_splicing(x, x_lens, self.frame_splicing)
 
         x_lens = torch.ceil(x_lens / self.frame_splicing).to(dtype=torch.int32)
 
         # normalize if required
         # pad N to ensure last batch accuracy
-        if self.pad_batch_size:
-            self.output_shape[0] = (actual_bs + 31) // 32 * 32
-        x, x_lens = torch.ops.intel_mlperf.i_layernorm_pad(
-            x, self.norm_weight, self.norm_bias, x_lens, 1e-12, unbiased=1, output_shape=self.output_shape)
+        if self.normalize == "per_feature":
+            if self.pad_batch_size:
+                self.output_shape[0] = (actual_bs + 31) // 32 * 32
+            x, x_lens = torch.ops.intel_mlperf.i_layernorm_pad(
+                x, self.norm_weight, self.norm_bias, x_lens, 1e-12, unbiased=1, output_shape=self.output_shape)
 
         return x, x_lens
 
