@@ -26,16 +26,17 @@ public:
   }
 
   template <typename... Args>
-  std::tuple<at::Tensor, at::Tensor> forward(Args&&... args) {
-    auto res = model_.forward(std::forward<Args>(args)...).toTuple()->elements();
+  std::tuple<at::Tensor, at::Tensor> forward(at::Tensor& wav, at::Tensor& wav_lens, bool pad_batch_size) {
+    auto res = model_.forward({wav, wav_lens, pad_batch_size}).toTuple()->elements();
     auto fea = res[0].toTensor();
     auto fea_lens = res[1].toTensor();
     return {fea, fea_lens};
   }
 
   template <typename... Args>
-  std::tuple<at::Tensor, at::Tensor> forward(int socket, Args&&... args) {
-    auto res = socket_model_[socket].forward(std::forward<Args>(args)...).toTuple()->elements();
+  std::tuple<at::Tensor, at::Tensor> forward(
+      int socket, at::Tensor& wav, at::Tensor& wav_lens, bool pad_batch_size) {
+    auto res = socket_model_[socket].forward({wav, wav_lens, pad_batch_size}).toTuple()->elements();
     auto fea = res[0].toTensor();
     auto fea_lens = res[1].toTensor();
     return {fea, fea_lens};

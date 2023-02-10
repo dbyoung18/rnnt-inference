@@ -98,6 +98,6 @@ class AudioProcessing(nn.Module):
         kwargs['pad_out_feat'] = True if run_mode == 'quant' else False
         self.featurizer = FeatureFactory.from_config(kwargs)
 
-    def forward(self, wavs: torch.Tensor, wav_lens: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        feas, fea_lens = self.featurizer(wavs, wav_lens)
+    def forward(self, wavs: torch.Tensor, wav_lens: torch.Tensor, pad_batch_size: bool) -> Tuple[torch.Tensor, torch.Tensor]:
+        feas, fea_lens = self.featurizer(wavs, wav_lens, pad_batch_size)
         return feas, fea_lens

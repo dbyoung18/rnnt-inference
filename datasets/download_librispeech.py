@@ -65,7 +65,7 @@ def download_file(url, dest_folder, fname, overwrite=False):
     os.rename(tmp_fpath, fpath)
 
 def md5_checksum(fpath, target_hash):
-    file_hash = hashlib.md5()
+    file_hash = hashlib.new("md5", usedforsecurity=False)
     with open(fpath, "rb") as fp:
         for chunk in iter(lambda: fp.read(1024 * 1024), b""):
             file_hash.update(chunk)

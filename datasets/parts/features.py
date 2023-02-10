@@ -94,12 +94,10 @@ class FilterbankFeatures(nn.Module):
                  pad_to=8,
                  max_duration=16.7,
                  frame_splicing=1,
-                 pad_out_feat=False,
-                 pad_batch_size=False):
+                 pad_out_feat=False):
         super(FilterbankFeatures, self).__init__()
 
         self.frame_splicing = frame_splicing
-        self.pad_batch_size = pad_batch_size
 
         torch_windows = {
             'hann': torch.hann_window,
@@ -154,7 +152,7 @@ class FilterbankFeatures(nn.Module):
         return seq_len
 
     @torch.no_grad()
-    def forward(self, x: torch.Tensor, x_lens: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor, x_lens: torch.Tensor, pad_batch_size: bool) -> Tuple[torch.Tensor, torch.Tensor]:
         actual_bs = x.shape[0]
 
         # add dither(for training)
@@ -198,7 +196,7 @@ class FilterbankFeatures(nn.Module):
         # normalize if required
         # pad N to ensure last batch accuracy
         if self.normalize == "per_feature":
-            if self.pad_batch_size:
+            if pad_batch_size:
                 self.output_shape[0] = (actual_bs + 31) // 32 * 32
             x, x_lens = torch.ops.intel_mlperf.i_layernorm_pad(
                 x, self.norm_weight, self.norm_bias, x_lens, 1e-12, unbiased=1, output_shape=self.output_shape)
@@ -214,7 +212,7 @@ class FilterbankFeatures(nn.Module):
                    max_duration=cfg.get('max_duration', 16.7),
                    dither=cfg['dither'], pad_to=cfg.get("pad_to", 0),
                    frame_splicing=cfg.get('frame_splicing', 1), log=log,
-                   pad_out_feat=cfg.get('pad_out_feat'), pad_batch_size=cfg.get('pad_batch_size'))
+                   pad_out_feat=cfg.get('pad_out_feat'))
 
 
 class FeatureFactory(object):

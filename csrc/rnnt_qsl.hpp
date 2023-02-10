@@ -60,7 +60,7 @@ public:
 
   std::tuple<at::Tensor, at::Tensor> GenerateDummySamples (long batch_size, bool processor = true);
 
-  Stack AssembleSamples(std::vector<QuerySampleIndex> indices, bool processor = true, int padded_batch_size = 1) const;
+  std::tuple<at::Tensor, at::Tensor> AssembleSamples(std::vector<QuerySampleIndex> indices, bool processor = true, int padded_batch_size = 1) const;
 
   // List of tensor of 1d
   // size_t GetFeatureLength(size_t index) const {

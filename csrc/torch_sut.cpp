@@ -45,6 +45,7 @@ BaseSUT::BaseSUT(
   mHt_ = (nMaxThread_ == nMaxProc_);
 
   batch_sort_ = (test_scenario == "Offline");
+  pad_batch_size_ = (test_scenario == "Offline");
   std::cout << "Use HT: " << mHt_ << std::endl;
   std::cout << "Use Processor: " << processor_flag_ << std::endl;
   std::cout << "Sort samples: " << batch_sort_ << std::endl;
@@ -130,7 +131,7 @@ void OfflineSUT::warmup(int which, int warmup_iter) {
   for (int i = 0; i < warmup_iter; ++i) {
     std::tie(x, x_lens) = qsl_.GenerateDummySamples(batch_size, processor_flag_);
     if (processor_flag_)
-      std::tie(x, x_lens) = processor_.forward(which, qsl::Stack {x, x_lens});
+      std::tie(x, x_lens) = processor_.forward(which, x, x_lens, pad_batch_size_);
     x = x.permute({2, 0, 1}).contiguous();
     state.update(x, x_lens, split_len_);
     model_.forward(which, state);
@@ -195,28 +196,25 @@ void OfflineSUT::thInstance(int index, int root) {
           [](mlperf::QuerySample sample) {return sample.index;});
 
       auto actual_batch_size = int(samples.size());
-      at::Tensor fea, fea_lens;
-      qsl::Stack input_stack;
+      at::Tensor x, x_lens;
       if (processor_flag_) {
         // pad T to max_len in batch
-        input_stack = qsl_.AssembleSamples(std::move(indices), processor_flag_);
-        std::tie(fea, fea_lens) = processor_.forward(which, input_stack);
+        std::tie(x, x_lens) = qsl_.AssembleSamples(std::move(indices), processor_flag_);
+        std::tie(x, x_lens) = processor_.forward(which, x, x_lens, pad_batch_size_);
         // auto processor_end = mlperf::PerfClock::now();
         // process_dur = get_duration(iter_start, processor_end);
         // std::cout << "Instance," << index << ",iter," << nIteration
-        //     << ",max_len," << fea_lens[0].item().toInt() << ",bs," << samples.size()
+        //     << ",max_len," << x_lens[0].item().toInt() << ",bs," << samples.size()
         //     << ",proc," << process_dur << std::endl << std::flush;
-        // BaseSUT::QuerySamplesComplete(samples, fea); continue;  // Test processor only(response {N, C, T})
-        fea = fea.permute({2, 0, 1}).contiguous();
+        // BaseSUT::QuerySamplesComplete(samples, x); continue;  // Test processor only(response {N, C, T})
+        x = x.permute({2, 0, 1}).contiguous();
       } else {
         // pad T to max_len in batch & pad N to ensure last batch accuracy
         auto padded_batch_size = (actual_batch_size + 31) / 32 * 32;
-        input_stack = qsl_.AssembleSamples(std::move(indices), processor_flag_, padded_batch_size);
-        fea = input_stack[0].toTensor();
-        fea_lens = input_stack[1].toTensor();
+        std::tie(x, x_lens) = qsl_.AssembleSamples(std::move(indices), processor_flag_, padded_batch_size);
       }
 
-      state.update(fea, fea_lens, split_len_, actual_batch_size);
+      state.update(x, x_lens, split_len_, actual_batch_size);
       // std::cout << "finish update" << std::endl << std::flush;
       model_.encode(which, state);
       // auto encoder_end = mlperf::PerfClock::now();
@@ -335,7 +333,7 @@ void ServerSUT::warmup(int which, int warmup_iter, int worker_type) {
       case Producer:
         if (processor_flag_) {
           std::tie(x, x_lens) = qsl_.GenerateDummySamples(batch_size, true);
-          std::tie(x, x_lens) = processor_.forward(which, qsl::Stack {x, x_lens});
+          std::tie(x, x_lens) = processor_.forward(which, x, x_lens, pad_batch_size_);
         }
         break;
       case Consumer:
@@ -410,21 +408,19 @@ void ServerSUT::thProducer(int index, int root) {
       // auto dequeue_end = mlperf::PerfClock::now();
       // dequeue_dur = get_duration(iter_start, dequeue_end);
 
-      at::Tensor fea, fea_lens;
-      qsl::Stack input_stack;
+      at::Tensor x, x_lens;
       if (processor_flag_) {
-        input_stack = qsl_.AssembleSamples(std::move(indices), processor_flag_);
-        std::tie(fea, fea_lens) = processor_.forward(which, input_stack);
+        std::tie(x, x_lens) = qsl_.AssembleSamples(std::move(indices), processor_flag_);
+        std::tie(x, x_lens) = processor_.forward(which, x, x_lens, pad_batch_size_);
       } else {
-        input_stack = qsl_.AssembleSamples(std::move(indices), processor_flag_, samples.size());
-        fea = input_stack[0].toTensor().permute({1, 2, 0}).contiguous();  // {T, N, C} -> {N, C, T}
-        fea_lens = input_stack[1].toTensor();
+        std::tie(x, x_lens) = qsl_.AssembleSamples(std::move(indices), processor_flag_, samples.size());
+        x = x.permute({1, 2, 0}).contiguous();  // {T, N, C} -> {N, C, T}
       }
       // auto processor_end = mlperf::PerfClock::now();
       // process_dur = get_duration(dequeue_end, processor_end);
 
-      auto fea_list = torch::split(fea, 1);
-      auto fea_lens_list = torch::split(fea_lens, 1);
+      auto fea_list = torch::split(x, 1);
+      auto fea_lens_list = torch::split(x_lens, 1);
       // TODO: bulk_enqueue
       for (int i = 0; i < samples.size(); ++i) {
         mProcessedQueue_.enqueue({samples[i], fea_list[i], fea_lens_list[i]});

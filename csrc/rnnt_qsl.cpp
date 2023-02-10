@@ -156,7 +156,7 @@ std::tuple<at::Tensor, at::Tensor> RNNTQuerySampleLibrary::GenerateDummySamples 
 
 
 // Assemble samples into larger batch
-Stack RNNTQuerySampleLibrary::AssembleSamples(
+std::tuple<at::Tensor, at::Tensor> RNNTQuerySampleLibrary::AssembleSamples(
     std::vector<QuerySampleIndex> indices, bool processor, int padded_batch_size) const {
   long actual_batch_size = indices.size();
   TensorList x_lens_list;
@@ -186,7 +186,7 @@ Stack RNNTQuerySampleLibrary::AssembleSamples(
       x.index_put_({at::indexing::Slice(0, len), i, at::indexing::Slice(0, rnnt::TRANS_INPUT_SIZE)}, xi);
     }
   }
-  return Stack {x, x_lens};
+  return {x, x_lens};
 }
 
 }  // namespace qsl

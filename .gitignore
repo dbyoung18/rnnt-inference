@@ -8,12 +8,14 @@ llvm-project/
 mlperf_plugins/onednn
 mlperf-rnnt-librispeech
 pytorch/
+tests/
 third_party/
 **/*.csv
 **/*.log
 **/*.pt
 **/*.swp
 **/*.txt
-.vscode
+.clang-format
 .gdb_history
+.vscode
 *.patch

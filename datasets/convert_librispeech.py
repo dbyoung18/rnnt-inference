@@ -118,7 +118,7 @@ def process_dataset(args, name, data_layer, data_processor):
         wavs.append(data[0].squeeze())
         wav_lens.append(data[1])
 
-        fea, fea_len = data_processor(data[0], data[1])
+        fea, fea_len = data_processor(data[0], data[1], pad_batch_size=False)
         # {N, C, T} -> {T, N, C}
         fea = fea.permute(2, 0, 1).contiguous()
         feas.append(fea.squeeze().contiguous())

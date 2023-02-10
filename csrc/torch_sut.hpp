@@ -87,6 +87,7 @@ public:
   int profiler_iter_;
   int warmup_iter_;
   bool batch_sort_;
+  bool pad_batch_size_;
 };
 
 class OfflineSUT : public BaseSUT {
