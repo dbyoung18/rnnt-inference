@@ -2,10 +2,9 @@
 
 set -ex
 
-: ${WORK_DIR=${1:-${PWD}/mlperf-rnnt-librispeech}}
-: ${BS=${2:-128}}
+: ${BS:=128}
 : ${LEN:=-1}
-: ${LOG_LEVEL=${3:-10}}
+: ${LOG_LEVEL:=10}
 : ${INTER:=1}
 : ${INTRA:=4}
 : ${SCENARIO:=Offline}
@@ -13,9 +12,13 @@ set -ex
 : ${MODE:=f32}
 : ${BF16:=true}
 : ${WAV:=false}
-: ${ACC:=true}
+: ${ACCURACY:=true}
 : ${LOAD_JIT:=false}
 : ${SAVE_JIT:=false}
+
+SUT_DIR=$(pwd)
+WORK_DIR=${SUT_DIR}/mlperf-rnnt-librispeech
+OUT_DIR=${SUT_DIR}/logs/${SCENARIO}
 
 export PYTHONPATH=${PWD}:${PWD}/models/:${PYTHONPATH}
 export RNNT_LOG_LEVEL=${LOG_LEVEL}
@@ -30,7 +33,7 @@ SCRIPT_ARGS+=" --manifest_path ${WORK_DIR}/local_data/wav/dev-clean-wav.json"
 SCRIPT_ARGS+=" --calib_dataset_dir ${WORK_DIR}/train-clean-100-npy.pt"
 SCRIPT_ARGS+=" --log_dir ${PWD}/logs/${SCENARIO}"
 SCRIPT_ARGS+=" --run_mode ${MODE}"
-[ ${ACC} == true ] && SCRIPT_ARGS+=" --accuracy"
+[ ${ACCURACY} == true ] && SCRIPT_ARGS+=" --accuracy"
 if [[ ${MODE} != "f32" && ${MODE} != "calib" && ${BF16} == true ]]; then
   SCRIPT_ARGS+=" --enable_bf16"
 fi
@@ -81,5 +84,12 @@ fi
 [ ${DEBUG} == false ] && EXEC_ARGS+=" python -u"
 
 ${EXEC_ARGS} models/main.py ${SCRIPT_ARGS}
+
+if [[ ${ACCURACY} == true ]]; then
+  export PYTHONPATH=${PWD}:${PWD}/models/:${PYTHONPATH}
+  python -u eval_accuracy.py \
+    --log_path=${OUT_DIR}/mlperf_log_accuracy.json \
+    --manifest_path=${WORK_DIR}/local_data/wav/dev-clean-wav.json
+fi
 
 set +x

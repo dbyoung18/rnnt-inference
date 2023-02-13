@@ -1,5 +1,7 @@
 import logging
 import os
+import sys
+sys.path.insert(0, os.path.split(os.path.realpath(__file__))[0])
 import torch
 
 from _C import *

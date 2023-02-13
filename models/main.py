@@ -48,8 +48,7 @@ def main():
         settings.scenario = scenario_map[args.scenario]
         settings.FromConfig(args.mlperf_conf, "rnnt", args.scenario)
         settings.FromConfig(args.user_conf, "rnnt", args.scenario)
-        settings.mode = lg.TestMode.AccuracyOnly if args.accuracy \
-            else lg.TestMode.PerformanceOnly
+        settings.mode = lg.TestMode.AccuracyOnly if args.accuracy else lg.TestMode.PerformanceOnly
         # set log
         os.makedirs(args.log_dir, exist_ok=True)
         log_output_settings = lg.LogOutputSettings()
@@ -59,14 +58,6 @@ def main():
         log_settings.log_output = log_output_settings
         print("==> Running loadgen test")
         lg.StartTestWithLogSettings(sut.sut, sut.qsl.qsl, settings, log_settings)
-        # eval accuracy
-        if args.accuracy:
-            print(f"==> Evaluating accuracy")
-            log_path = os.path.join(args.log_dir, "mlperf_log_accuracy.json")
-            acc_path = os.path.join(os.getcwd(), "eval_accuracy.py")
-            cmd = f"python {acc_path} --log_path {log_path} --manifest_path {args.manifest_path}"
-            print(f"==> Running accuracy script: {cmd}")
-            subprocess.check_call(cmd)
         print("Done!")
 
 if __name__ == "__main__":
