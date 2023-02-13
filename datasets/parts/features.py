@@ -131,16 +131,14 @@ class FilterbankFeatures(nn.Module):
         self.register_buffer("window", window_tensor)
         self.register_buffer("fb_bias", fb_bias)
         # Calculate maximum sequence length (# frames)
-        max_length = 1 + math.ceil(
-            (max_duration * sample_rate - self.win_length) / self.hop_length
-        )
+        max_length = 1 + math.ceil((max_duration * sample_rate - self.win_length) / self.hop_length)
         max_pad = 16 - (max_length % 16)
         self.max_length = max_length + max_pad # 1680
 
         self.in_feat = filterbanks.shape[1] # 80
         self.out_feat = self.in_feat * self.frame_splicing # 240
         if pad_out_feat:
-            self.out_feat = (self.out_feat + 31) // 32 * 32 # 256
+            self.out_feat = math.ceil(self.out_feat / 32) * 32 # 256
         self.output_shape = torch.tensor((1, self.out_feat, self.max_length), dtype=torch.int32)
         self.norm_weight = torch.ones((1, self.out_feat, self.max_length))
         self.norm_bias = torch.zeros((1, self.out_feat, self.max_length))

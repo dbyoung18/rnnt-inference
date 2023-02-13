@@ -65,16 +65,16 @@ fi
 
 if [[ ${STAGE} -le 5 ]]; then
   echo '==> Run RNN-T Offline accuracy'
-  SCENARIO=Offline LEN=4 ACCURACY=true ./launch_sut.sh
+  SCENARIO=Offline LEN=4 BS=128 INTER=28 INTRA=4 ACCURACY=true ./launch_sut.sh
   sleep 5
   echo '==> Run RNN-T Offline benchmark'
-  SCENARIO=Offline LEN=4 WARMUP=3 ./launch_sut.sh
+  SCENARIO=Offline LEN=4 BS=128 INTER=28 INTRA=4 WARMUP=3 ./launch_sut.sh
   sleep 5
   echo '==> Run RNN-T Server accuracy'
-  SCENARIO=Server LEN=8 RESPONSE=3 BS=128 INTRA=8 ACCURACY=true ./launch_sut.sh
+  SCENARIO=Server LEN=8 RESPONSE=3 PRO_BS=4 PRO_INTER=16 PRO_INTRA=1 BS=128 INTER=12 INTRA=8 ACCURACY=true ./launch_sut.sh
   sleep 5
   echo '==> Run RNN-T Server benchmark'
-  SCENARIO=Server LEN=8 RESPONSE=3 BS=128 INTRA=8 WARMUP=3 ./launch_sut.sh
+  SCENARIO=Server LEN=8 RESPONSE=3 PRO_BS=4 PRO_INTER=16 PRO_INTRA=1 BS=128 INTER=12 INTRA=8 WARMUP=3 ./launch_sut.sh
   wait
 fi
 

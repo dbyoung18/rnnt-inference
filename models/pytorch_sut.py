@@ -3,6 +3,7 @@ import sys
 sys.path.insert(0, os.path.join(os.getcwd(), "../"))
 
 import array
+import math
 import mlperf_loadgen as lg
 import toml
 import torch
@@ -34,7 +35,7 @@ class PytorchSUT:
         else:
             from modeling_rnnt import RNNT
         rnnt = RNNT(model_path, run_mode, args.enable_bf16, args.load_jit).eval()
-        self.model = GreedyDecoder(rnnt, run_mode, args.enable_bf16, args.split_len)
+        self.model = GreedyDecoder(rnnt, run_mode, args.enable_bf16, args.split_len, self.batch_size)
         self.enable_process = (self.processor != None)
         self.scenario = args.scenario if run_mode != "calib" else None
         self.batch_sort = True if self.scenario == "Offline" else False
@@ -74,7 +75,7 @@ class PytorchSUT:
                 fea_lens = torch.tensor([self.qsl[idx][1] for idx in batch_idx])
                 # pad N to ensure last batch accuracy
                 if self.actual_batch_size % 32 != 0:
-                    padded_batch_size = (self.actual_batch_size // 32 + 1) * 32
+                    padded_batch_size = math.ceil(self.actual_batch_size / 32) * 32
                     feas = torch.nn.functional.pad(feas, (0, 0, 0, padded_batch_size - self.actual_batch_size, 0, 0), "constant", 0.)
                     fea_lens = torch.nn.functional.pad(fea_lens, (0, padded_batch_size - self.actual_batch_size), "constant", 0.)
             results = self.model(feas, fea_lens)

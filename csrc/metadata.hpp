@@ -1,5 +1,6 @@
 #pragma once
 #include <ATen/core/ivalue.h>
+#include <math.h>
 #include <string>
 #include <torch/script.h>
 #include <ATen/Parallel.h>
@@ -38,6 +39,8 @@ public:
   State() {};
   State(int32_t batch_size, int32_t split_len = -1) {
     init(batch_size, split_len);
+    auto intra = at::get_num_threads();
+    padded_batch_size_ = ceil(batch_size_ / (intra * 16)) * (intra * 16);
   };
   virtual ~State() = default;
   void init(int32_t batch_size, int32_t split_len = -1);
@@ -47,6 +50,7 @@ public:
 
   int32_t finish_size_;
   int32_t actual_batch_size_;
+  int32_t padded_batch_size_;
   int32_t batch_size_;
   int32_t split_len_;
   int32_t padded_fea_len_ = MAX_FEA_LEN;
@@ -82,6 +86,8 @@ public:
   PipelineState(int32_t batch_size, int32_t split_len, int32_t response_size):
       finish_size_(batch_size), response_size_(response_size) {
     init(batch_size, split_len);
+    auto intra = at::get_num_threads();
+    padded_batch_size_ = ceil(batch_size_ / (intra * 16)) * (intra * 16);
   };
   virtual ~PipelineState() = default;
   void init(int32_t batch_size, int32_t split_len = -1);

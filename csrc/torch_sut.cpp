@@ -127,7 +127,7 @@ void OfflineSUT::warmup(int which, int warmup_iter) {
   // auto start = std::chrono::high_resolution_clock::now();
   long batch_size = (long)mThreshold_;
   at::Tensor x, x_lens;
-  rnnt::State state;
+  rnnt::State state(mThreshold_, split_len_);
   for (int i = 0; i < warmup_iter; ++i) {
     std::tie(x, x_lens) = qsl_.GenerateDummySamples(batch_size, processor_flag_);
     if (processor_flag_)
@@ -166,7 +166,7 @@ void OfflineSUT::thInstance(int index, int root) {
   }
   {
     auto guard_ = std::make_unique<ProfileRecord>((profiler_iter_ > 0), log_name);
-    rnnt::State state;
+    rnnt::State state(mThreshold_, split_len_);
     size_t nIteration = 0;
     // long process_dur = 0, encode_dur = 0, decode_dur = 0;
     while (true) {
@@ -210,7 +210,7 @@ void OfflineSUT::thInstance(int index, int root) {
         x = x.permute({2, 0, 1}).contiguous();
       } else {
         // pad T to max_len in batch & pad N to ensure last batch accuracy
-        auto padded_batch_size = (actual_batch_size + 31) / 32 * 32;
+        auto padded_batch_size = ceil(actual_batch_size / 32) * 32;
         std::tie(x, x_lens) = qsl_.AssembleSamples(std::move(indices), processor_flag_, padded_batch_size);
       }
 
@@ -326,8 +326,7 @@ void ServerSUT::warmup(int which, int warmup_iter, int worker_type) {
   // auto start = std::chrono::high_resolution_clock::now();
   long batch_size = (long)mThreshold_;
   at::Tensor x, x_lens;
-  auto state = (test_scenario_ == "Server") ? rnnt::State(mThreshold_, split_len_)
-      : rnnt::PipelineState(mThreshold_, split_len_, mResponseThreshold_);
+  auto state = rnnt::State(mThreshold_, split_len_);
   for (int i = 0; i < warmup_iter; ++i) {
     switch (worker_type) {
       case Producer:

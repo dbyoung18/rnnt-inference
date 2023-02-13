@@ -1,3 +1,4 @@
+import math
 import os
 import torch
 import _C as P
@@ -8,12 +9,14 @@ from utils import *
 
 
 class GreedyDecoder(torch.nn.Module):
-    def __init__(self, model, run_mode, enable_bf16=False, split_len=-1):
+    def __init__(self, model, run_mode, enable_bf16=False, split_len=-1, batch_size=1):
         super().__init__()
         self.rnnt = model
         self.split_len = split_len
         self.enable_bf16 = enable_bf16
         self.run_mode = run_mode
+        intra = torch.get_num_threads()
+        self.padded_batch_size = math.ceil(batch_size / (intra * 16)) * (intra * 16)
 
     def forward(self, x: Tensor, x_lens: Tensor):
         """
@@ -82,7 +85,7 @@ class GreedyDecoder(torch.nn.Module):
             # 2. do prediction
             g, hg, cg = self.rnnt.prediction(self.pre_g, self.pre_hg, self.pre_cg)
             # 3. do joint
-            y = self.rnnt.joint(fi, g[0])
+            y = self.rnnt.joint(fi, g[0], self.padded_batch_size)
             symbols = torch.argmax(y, dim=1)
             # 4. if (no BLANK and no MAX_SYMBOLS_PER_STEP) and no FINISH
             self.update_g = symbols.ne(RNNTParam.BLANK) & self.symbols_added.ne(RNNTParam.max_symbols_per_step) & ~self.finish

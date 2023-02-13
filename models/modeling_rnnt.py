@@ -199,7 +199,6 @@ class Joint(torch.nn.Module):
             RNNTParam.num_labels
         )
         self.enable_bf16 = enable_bf16
-        self.padded_batch_size = torch.get_num_threads() * 32
 
     @torch.jit.ignore
     def prepack_weights(self):
@@ -220,7 +219,7 @@ class Joint(torch.nn.Module):
             self.linear1_pred.weight = Parameter(P.prepack_linear_weight(self.linear1_pred.weight), requires_grad=False)
         # self.linear2.weight = Parameter(P.prepack_linear_weight(self.linear2.weight), requires_grad=False)
 
-    def forward(self, f: Tensor, g: Tensor) -> Tensor:
+    def forward(self, f: Tensor, g: Tensor, padded_batch_size: int = 1) -> Tensor:
         """
         Args:
           f: {T=1, N, TC}
@@ -232,9 +231,9 @@ class Joint(torch.nn.Module):
         if self.enable_bf16:
             y = P.amx_linear_bf16_accum_relu(f, self.linear1_trans.weight, g, self.linear1_pred.weight, self.linear1_bias)
             # pad N to ensure last linear compute
-            remainder = y.shape[0] % self.padded_batch_size
+            remainder = y.shape[0] % padded_batch_size
             if remainder != 0:
-                y = F.pad(y, (0, 0, 0, self.padded_batch_size - y.shape[0]), "constant", 0.0)
+                y = F.pad(y, (0, 0, 0, padded_batch_size - y.shape[0]), "constant", 0.0)
                 y = P.amx_linear_i16o32(y, self.linear2.weight, self.linear2.bias)
                 y = y[:remainder, ...]
             else:

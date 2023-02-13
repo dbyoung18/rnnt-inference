@@ -80,7 +80,7 @@ if [[ ${ACCURACY} == true ]]; then
   export PYTHONPATH=${PWD}:${PWD}/models/:${PYTHONPATH}
   python -u eval_accuracy.py \
     --log_path=${OUT_DIR}/mlperf_log_accuracy.json \
-    --manifest_path=${WORK_DIR}/local_data/wav/dev-clean-wav.json
+    --manifest_path=${WORK_DIR}/local_data/wav/dev-clean-wav.json | tee ${OUT_DIR}/accuracy.txt
 fi
 
 set +x

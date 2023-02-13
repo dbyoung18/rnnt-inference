@@ -93,7 +93,7 @@ public:
       auto hg = pred_res[1].toTensorVector();
       auto cg = pred_res[2].toTensorVector();
       // 3. do joint
-      auto y = model.joint({fi, g[0]}).toTensor();
+      auto y = model.joint({fi, g[0], state.padded_batch_size_}).toTensor();
       auto symbols = torch::argmax(y, 1);
       // 4. update state & flags
       bool finish = model.update({
