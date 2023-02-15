@@ -97,12 +97,8 @@ void PipelineState::init (int32_t batch_size, int32_t split_len) {
   F_ = torch::empty({padded_fea_len_, batch_size_, PADDED_INPUT_SIZE});
   F_lens_ = torch::empty({batch_size_}, torch::kInt32);
   infer_lens_ = torch::empty({batch_size_}, torch::kInt32);
-  remain_lens_ = torch::empty({batch_size_}, torch::kInt32);
+  remain_lens_ = torch::zeros({batch_size_}, torch::kInt32);
   finish_idx_ = torch::full({batch_size_}, true, torch::kBool);
-  if (split_len > 0) {
-    split_idx_ = torch::empty({batch_size_}, torch::kInt32);
-    eos_idx_ = torch::full({batch_size_}, (padded_fea_len_ + split_len - 1) / split_len - 1, torch::kInt32);
-  }
 }
 
 void PipelineState::update (
@@ -115,34 +111,34 @@ void PipelineState::update (
   // if (actual_batch_size_ > batch_size_ || split_len != split_len_)
   //   PipelineState::init(actual_batch_size_, split_len);
   // update transcription tensors
-  auto trans_state_mask = finish_idx_.unsqueeze(1).expand({batch_size_, TRANS_HIDDEN_SIZE});
-  for (int32_t layer = 0; layer < PRE_NUM_LAYERS; ++layer) {
-    pre_hx_[layer].masked_fill_(trans_state_mask, 0);
-    pre_cx_[layer].masked_fill_(trans_state_mask, 0.);
+  if(dequeue_size_ != 0){
+    auto trans_state_mask = finish_idx_.unsqueeze(1).expand({batch_size_, TRANS_HIDDEN_SIZE});
+    for (int32_t layer = 0; layer < PRE_NUM_LAYERS; ++layer) {
+      pre_hx_[layer].masked_fill_(trans_state_mask, 0);
+      pre_cx_[layer].masked_fill_(trans_state_mask, 0.);
+    }
+    for (int32_t layer = 0; layer < POST_NUM_LAYERS; ++layer) {
+      post_hx_[layer].masked_fill_(trans_state_mask, 0);
+      post_cx_[layer].masked_fill_(trans_state_mask, 0.);
+    }
+    // update prediction tensors
+    pre_g_.masked_fill_(finish_idx_, SOS);
+    auto pred_state_mask = finish_idx_.unsqueeze(1).expand({batch_size_, PRED_HIDDEN_SIZE});
+    for (int64_t layer = 0; layer < PRED_NUM_LAYERS; ++layer) {
+      pre_hg_[layer].masked_fill_(pred_state_mask, 0.);
+      pre_cg_[layer].masked_fill_(pred_state_mask, 0.);
+    }
+    // update res tensors
+    res_idx_.masked_fill_(finish_idx_, -1);
   }
-  for (int32_t layer = 0; layer < POST_NUM_LAYERS; ++layer) {
-    post_hx_[layer].masked_fill_(trans_state_mask, 0);
-    post_cx_[layer].masked_fill_(trans_state_mask, 0.);
-  }
-  // update prediction tensors
-  pre_g_.masked_fill_(finish_idx_, SOS);
-  auto pred_state_mask = finish_idx_.unsqueeze(1).expand({batch_size_, PRED_HIDDEN_SIZE});
-  for (int64_t layer = 0; layer < PRED_NUM_LAYERS; ++layer) {
-    pre_hg_[layer].masked_fill_(pred_state_mask, 0.);
-    pre_cg_[layer].masked_fill_(pred_state_mask, 0.);
-  }
-  // update res tensors
-  res_.masked_fill_(finish_idx_.unsqueeze(1).expand({batch_size_, max_res_len_}), SOS);
-  res_idx_.masked_fill_(finish_idx_, -1);
   // update f & f_lens
-  F_.masked_fill_(finish_idx_.unsqueeze(0).unsqueeze(2).expand({padded_fea_len_, batch_size_, PADDED_INPUT_SIZE}), 0);
   F_lens_.masked_fill_(finish_idx_, 0);
   for (int32_t i = 0, j = 0; i < batch_size_ && j < dequeue_size; ++i) {
     if (finish_idx_[i].item().toBool()) {
       auto f_len = std::get<2>(dequeue_list[j]).item().toInt();
       F_lens_.index_put_({i}, f_len);
       remain_lens_.index_put_({i}, f_len);
-      auto f = std::get<1>(dequeue_list[j]).permute({2, 0, 1}).contiguous();
+      auto f = std::get<1>(dequeue_list[j]);
       F_.index_put_({Slice(0, f_len), i}, f.index({Slice(0, f_len)}).squeeze());
       samples[i] = std::get<0>(dequeue_list[j]);
       ++j;
@@ -150,9 +146,7 @@ void PipelineState::update (
   }
   padded_size_ = batch_size_ - remain_size_ - dequeue_size;
   if (split_len_ > 0) {
-    f_split_ = torch::split(F_, split_len_);
     infer_lens_.zero_();
-    split_idx_.masked_fill_(finish_idx_, 0);
     finish_size_ = padded_size_;
     stop_size_ = std::min(batch_size_, padded_size_ + response_size_);
   } else {
@@ -170,10 +164,12 @@ bool PipelineState::next () {
     f_lens_ = torch::min(split_lens_, remain_lens_);
     TensorVector f_list;
     f_list.reserve(batch_size_);
-    for (int32_t i = 0; i < batch_size_; ++i)
-      f_list.emplace_back(f_split_[split_idx_[i].item().toInt()].index({Slice(), i, Slice()}));
+    // gather f
+    for (int32_t i = 0; i < batch_size_; ++i){
+      auto begin_idx_ = (remain_lens_[i].item().toInt() == 0) ? 0 : (F_lens_[i] - remain_lens_[i]).item().toInt();
+      f_list.emplace_back(F_.index({Slice(begin_idx_, begin_idx_ + split_len_), i, "..."}));
+    }
     f_ = torch::stack(f_list, 1);
-    split_idx_ = torch::min(eos_idx_, split_idx_+1);
     remain_lens_ -= f_lens_;
     infer_lens_ += f_lens_;
     finish_idx_ = remain_lens_.le(0);

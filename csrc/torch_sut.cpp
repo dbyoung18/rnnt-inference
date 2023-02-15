@@ -422,7 +422,7 @@ void ServerSUT::thProducer(int index, int root) {
       auto fea_lens_list = torch::split(x_lens, 1);
       // TODO: bulk_enqueue
       for (int i = 0; i < samples.size(); ++i) {
-        mProcessedQueue_.enqueue({samples[i], fea_list[i], fea_lens_list[i]});
+        mProcessedQueue_.enqueue({samples[i], fea_list[i].permute({2, 0, 1}).contiguous(), fea_lens_list[i]});
       }
       // auto enqueue_end = mlperf::PerfClock::now();
       // enqueue_dur = get_duration(process_end, enqueue_end);
