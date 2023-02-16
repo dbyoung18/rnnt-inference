@@ -69,7 +69,7 @@ public:
 
   // List of tensor of 1d
   size_t GetFeatureLength(QuerySampleIndex index) const {
-    return x_set_[index].size(0);
+    return x_lens_set_[index].item().toInt();
   }
 
   // Sort LibriSpeech data for batching

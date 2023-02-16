@@ -1,4 +1,4 @@
-# RNNT MLPerf Inference BKC
+# RNN-T MLPerf Inference BKC
 
 ## HW & SW requirements
 ###
@@ -7,7 +7,7 @@
   GCC >= 11
 ```
 
-## Steps to run RNNT with three options
+## Steps to run RNN-T with three options
 
 ### Option 1: Run on bare metal
 #### 1. Install anaconda 3.0
@@ -33,7 +33,7 @@ Execute `run.sh`. The end-to-end process including:
 
 You can also use the following command to start with your custom conda-env/work-dir/step.
 ```
-  ./run.sh [CONDA_ENV] [WORK_DIR] [STAGE]
+  [CONDA_ENV] [WORK_DIR] [STAGE] bash run.sh
 ```
 
 ### Option 2: Build docker container

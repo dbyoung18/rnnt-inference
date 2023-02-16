@@ -51,6 +51,9 @@ int main(int argc, char **argv) {
            {"response_size", "Minimum response size for early-response(Server)",
             cxxopts::value<int>()->default_value("-1")},
 
+           {"qos_len", "Minimum sequence length for QoS(Server)",
+            cxxopts::value<int>()->default_value("-1")},
+
            {"k,test_scenario", "Test scenario [Offline, Server]",
             cxxopts::value<std::string>()->default_value("Offline")},
 
@@ -92,6 +95,7 @@ int main(int argc, char **argv) {
   auto batch_size = parsed_opts["batch_size"].as<int>();
   auto split_len = parsed_opts["split_len"].as<int>();
   auto response_size = parsed_opts["response_size"].as<int>();
+  auto qos_len = parsed_opts["qos_len"].as<int>();
   auto test_scenario = parsed_opts["test_scenario"].as<std::string>();
   auto processor_flag = parsed_opts["processor"].as<bool>();
   auto profiler_folder = parsed_opts["profiler_folder"].as<std::string>();
@@ -132,7 +136,7 @@ int main(int argc, char **argv) {
     rnnt::ServerSUT sut(
       sample_file, model_file, processor_file,
       pro_inter_parallel, pro_intra_parallel, inter_parallel, intra_parallel,
-      pro_batch_size, batch_size, split_len, response_size,
+      pro_batch_size, batch_size, split_len, response_size, qos_len,
       test_scenario, processor_flag,
       profiler_folder, profiler_iter, warmup_iter);
 

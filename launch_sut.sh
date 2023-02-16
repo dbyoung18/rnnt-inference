@@ -12,6 +12,7 @@ export MALLOC_CONF="oversize_threshold:1,background_thread:true,percpu_arena:per
 : ${INTRA:=4}
 : ${LEN:=-1}
 : ${RESPONSE:=-1}
+: ${QOS:=-1}
 : ${SCENARIO=${2:-"Offline"}}
 : ${ACCURACY:=false}
 : ${DEBUG:=false}
@@ -25,32 +26,28 @@ SUT_DIR=$(pwd)
 EXECUTABLE=${SUT_DIR}/build/rnnt_inference
 WORK_DIR=${SUT_DIR}/mlperf-rnnt-librispeech
 OUT_DIR="${SUT_DIR}/logs/${SCENARIO}"
-OUT_DIR_NANE="${SCENARIO}_${VERSION}_${WAV}_PBS${PRO_BS}_${PRO_INTER}_${PRO_INTRA}_BS${BS}_${INTER}_${INTRA}_SL${LEN}_RESPONSE${RESPONSE}"
+
+if [[ ${SCENARIO} == "Offline" ]]; then
+  OUT_DIR_NANE="${SCENARIO}_${VERSION}_${WAV}_BS${BS}_${INTER}_${INTRA}_SL${LEN}"
+elif [[ ${SCENARIO} == "Server" ]]; then
+  OUT_DIR_NANE="${SCENARIO}_${VERSION}_${WAV}_PBS${PRO_BS}_${PRO_INTER}_${PRO_INTRA}_BS${BS}_${INTER}_${INTRA}_SL${LEN}_RSP${RESPONSE}_QOS${QOS}"
+fi
+
 if [[ ${ACCURACY} == true ]]; then
   OUT_DIR="${OUT_DIR}/accuracy/${OUT_DIR_NANE}"
 else
   OUT_DIR="${OUT_DIR}/performance/run_1/${OUT_DIR_NANE}"
 fi
-mkdir -p ${OUT_DIR} ${WORK_DIR}
-
-if [[ ${SCENARIO} == "Offline" ]]; then
-  num_instance=${INTER}
-  core_per_instance=${INTRA}
-  batch_size=${BS}
-elif [[ ${SCENARIO} == "Server" ]]; then
-  num_instance=${INTER}
-  core_per_instance=${INTRA}
-  batch_size=${BS}
-fi
+mkdir -p ${OUT_DIR}
 
 SCRIPT_ARGS=" --test_scenario=${SCENARIO}"
 SCRIPT_ARGS+=" --model_file=${WORK_DIR}/rnnt_${MODE}_jit.pt"
 SCRIPT_ARGS+=" --mlperf_config=${SUT_DIR}/inference/mlperf.conf"
 SCRIPT_ARGS+=" --user_config=${SUT_DIR}/configs/user.conf"
 SCRIPT_ARGS+=" --output_dir=${OUT_DIR}"
-SCRIPT_ARGS+=" --inter_parallel=${num_instance}"
-SCRIPT_ARGS+=" --intra_parallel=${core_per_instance}"
-SCRIPT_ARGS+=" --batch_size=${batch_size}"
+SCRIPT_ARGS+=" --inter_parallel=${INTER}"
+SCRIPT_ARGS+=" --intra_parallel=${INTRA}"
+SCRIPT_ARGS+=" --batch_size=${BS}"
 SCRIPT_ARGS+=" --split_len=${LEN}"
 SCRIPT_ARGS+=" --warmup_iter=${WARMUP}"
 
@@ -61,7 +58,7 @@ else
 fi
 
 if [[ ${SCENARIO} == "Server" ]]; then
-  SCRIPT_ARGS+=" --pro_inter_parallel=${PRO_INTER} --pro_intra_parallel=${PRO_INTRA} --pro_batch_size=${PRO_BS} --response_size=${RESPONSE}"
+  SCRIPT_ARGS+=" --pro_inter_parallel=${PRO_INTER} --pro_intra_parallel=${PRO_INTRA} --pro_batch_size=${PRO_BS} --response_size=${RESPONSE} --qos_len=${QOS}"
 fi
 if [[ ${ACCURACY} == true ]]; then
   SCRIPT_ARGS+=" --accuracy"

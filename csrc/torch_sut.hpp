@@ -136,6 +136,7 @@ public:
       int batch_size,
       int split_len = -1,
       int response_size = -1,
+      int qos_len = -1,
       const std::string test_scenario = "Server",
       bool processor = true,
       const std::string& profiler_foler = "",
@@ -145,8 +146,8 @@ public:
 
 private:
   void FlushQueries() override {
-    finish_enqueue_ = true;
-    std::cout << "finish produce" << std::endl << std::flush;
+    lStop_ = true;
+    std::cout << "Loadgen finish flushing" << std::flush;
   }
 
   void warmup(int which, int warmup_iter, int worker_type);
@@ -172,7 +173,9 @@ private:
   // Control over max samples a instance will peek
   size_t mProThreshold_;
   size_t mResponseThreshold_;
+  size_t mLengthThreshold_ = 230000;
   moodycamel::BlockingConcurrentQueue<std::tuple<mlperf::QuerySample, at::Tensor, at::Tensor>> mProcessedQueue_;
-  bool finish_enqueue_ = false;
+  bool lStop_ = false;
+  Queue_t mQosQueue_;
 };
 }  // namespace rnnt

@@ -268,6 +268,7 @@ ServerSUT::ServerSUT(
     int batch_size,
     int split_len,
     int response_size,
+    int qos_len,
     std::string test_scenario,
     bool processor,
     const std::string& profiler_folder,
@@ -279,7 +280,7 @@ ServerSUT::ServerSUT(
       profiler_folder, profiler_iter, warmup_iter),
       nProducers_(pro_inter_parallel), nThreadsPerProducer_(pro_intra_parallel),
       nConsumers_(inter_parallel), nThreadsPerConsumer_(intra_parallel),
-      mProThreshold_(pro_batch_size), mProcessedQueue_(3000) {
+      mProThreshold_(pro_batch_size), mLengthThreshold_(qos_len), mProcessedQueue_(3000) {
 
   mResponseThreshold_ = (response_size == -1) ? mThreshold_ : response_size;
 
@@ -381,21 +382,54 @@ void ServerSUT::thProducer(int index, int root) {
     while (true) {
       // critical section
       {
-        std::unique_lock<std::mutex> l(mtx_);
-        ctrl_.wait(l, [this] {return mStop_ || !mQueue_.empty();});
+        if (mLengthThreshold_ > 0) {
+          std::unique_lock<std::mutex> l(mtx_);
+          ctrl_.wait(l, [this] {return mStop_ || !mQueue_.empty() || !mQosQueue_.empty();});
 
-        if (mStop_) break;
+          if (mStop_) break;
 
-        auto nPeek = std::min(mQueue_.size(), mProThreshold_);
-        auto it = mQueue_.begin();
-        // XXX: pointer chaser, choose better solution
-        std::advance(it, nPeek);
+          size_t infer_size = 0;
+          snippet.clear();
+          if (!mQueue_.empty()) {
+            auto it = mQueue_.begin();
+            // filter qos samples
+            for (; it != mQueue_.end();) {
+              auto x_len = qsl_.GetFeatureLength(it->index);
+              if (x_len > mLengthThreshold_) {
+                mQosQueue_.splice(mQosQueue_.end(), mQueue_, it++);
+              } else {
+                ++it;
+                ++infer_size;
+              }
+              if (infer_size == mProThreshold_) break;
+            }
+            snippet.splice(snippet.begin(), mQueue_, mQueue_.begin(), it);
+          } else if (lStop_ && !mQosQueue_.empty()) {
+            // infer qos samples
+            auto nPeek = std::min(mQosQueue_.size(), mProThreshold_);
+            auto it = mQosQueue_.begin();
+            std::advance(it, nPeek);
+            snippet.splice(snippet.begin(), mQosQueue_, mQosQueue_.begin(), it);
+          }
 
-        snippet.clear();
-        snippet.splice(snippet.begin(), mQueue_, mQueue_.begin(), it);
+          if (!mQueue_.empty()) ctrl_.notify_one();  // TODO: check notification
+          if (snippet.empty()) continue;
+        } else {
+          std::unique_lock<std::mutex> l(mtx_);
+          ctrl_.wait(l, [this] {return mStop_ || !mQueue_.empty();});
 
-        // if (!mQueue_.empty()) Offline never empty
-        ctrl_.notify_one();
+          if (mStop_) break;
+
+          auto nPeek = std::min(mQueue_.size(), mProThreshold_);
+          auto it = mQueue_.begin();
+          // XXX: pointer chaser, choose better solution
+          std::advance(it, nPeek);
+          snippet.clear();
+          snippet.splice(snippet.begin(), mQueue_, mQueue_.begin(), it);
+
+          if (!mQueue_.empty())  ctrl_.notify_one();
+          if (snippet.empty()) continue;
+        }
       }
 
       // mlperf::PerfClock::time_point iter_start = mlperf::PerfClock::now();
@@ -486,7 +520,7 @@ void ServerSUT::thConsumer(int index, int root) {
       bool finish_dequeue = false;
       while (!mStop_ && !finish_dequeue && dequeue_size == 0 && state.finish_size_ != 0) {
         // no new samples left
-        if (finish_enqueue_ && mProcessedQueue_.size_approx() == 0) {
+        if (lStop_ && mQosQueue_.empty() && mProcessedQueue_.size_approx() == 0) {
           finish_dequeue = true;
           break;
         }
@@ -555,7 +589,7 @@ void ServerSUT::QuerySamplesComplete(
       ++j;
       auto latency = get_latency(samples[i]);
       if (latency >= 1000)
-        std::cout << "finish sample " << samples[i].id << ", len " << state.F_lens_[i].item().toInt() << " ,cost " << latency << " ms\n" << std::flush;
+        std::cout << "finish sample " << samples[i].index << "::" << samples[i].id << ", len " << state.F_lens_[i].item().toInt() << " ,cost " << latency << " ms\n" << std::flush;
       // std::cout << samples[i].index << "::" << models::TorchModel::sequence_to_string(state.res_[i], res_len) << std::endl << std::flush;
     }
   }
