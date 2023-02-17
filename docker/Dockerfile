@@ -40,7 +40,7 @@ RUN curl -fsSL -v -o ~/miniconda.sh -O  https://repo.anaconda.com/miniconda/Mini
     chmod +x ~/miniconda.sh && \
     ~/miniconda.sh -b -p /opt/conda && \
     rm ~/miniconda.sh && \
-    /opt/conda/bin/conda install -y python=${PYTHON_VERSION} ninja cmake jemalloc inflect libffi pandas requests toml tqdm unidecode scipy && \
+    /opt/conda/bin/conda install -y python=${PYTHON_VERSION} ninja cmake jemalloc inflect libffi pandas requests toml tqdm unidecode scipy==1.9.3 && \
     /opt/conda/bin/conda install -c conda-forge llvm-openmp librosa wheel==0.38.1 setuptools==65.5.1 future==0.18.3 && \
     /opt/conda/bin/conda install -c intel mkl mkl-include intel-openmp && \
     /opt/conda/bin/conda clean -ya && \
@@ -109,9 +109,9 @@ RUN cd /opt/workdir/code/rnnt/pytorch-cpu/ && \
     ninja
 
 
-#ENV LD_LIBRARY_PATH "/opt/conda/lib/python3.8/site-packages/lib/"
 FROM dev-base as mp
 COPY --from=setup /opt/conda /opt/conda
 COPY --from=setup /opt/workdir /opt/workdir
 WORKDIR /opt/workdir
 ENV CONDA_PREFIX "/opt/conda"
+ENV LD_LIBRARY_PATH "/opt/workdir/code/rnnt/pytorch-cpu/third_party/lib:$LD_LIBRARY_PATH"
