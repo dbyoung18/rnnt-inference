@@ -104,8 +104,7 @@ public:
   int32_t stop_size_;      // = min(batch_size_, padded_size_ + response_size_)
   int32_t remain_size_ = 0;   // remain_size_' = batch_size_ - finish_size_
   int32_t dequeue_size_ = 0;  // <= finish_size_
-  int32_t padded_size_ =
-      0;  // batch_size_ = remain_size_ + dequeue_size_ + padded_size_
+  int32_t padded_size_ = 0;  // = batch_size_ - remain_size_ - dequeue_size_
   // transcription
   at::Tensor F_;
   at::Tensor F_lens_;

@@ -283,5 +283,4 @@ class FeatureFactory(object):
     def from_config(cls, cfg):
         feat_type = cfg.get("feat_type", "logspect")
         featurizer = cls.featurizers[feat_type]
-        # return featurizer.from_config(cfg, log="log" in cfg['feat_type'])
         return featurizer.from_config(cfg, log="log" in feat_type)

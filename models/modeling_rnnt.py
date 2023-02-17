@@ -170,8 +170,6 @@ class Prediction(torch.nn.Module):
                 self.pred_rnn.weights.append(
                     [prepacked_w_ih, prepacked_w_hh, b_ih, b_hh + b_ih]
                 )
-                # prepacked_w_ih, prepacked_w_hh = P.prepack_lstm_weights(w_ih, w_hh)
-                # self.pred_rnn.weights.append([prepacked_w_ih, prepacked_w_hh, b_ih.requires_grad_(False), b_hh.requires_grad_(False)])
             else:
                 prepacked_w_ih, prepacked_w_hh = P.prepack_lstm_weights(w_ih, w_hh)
                 self.pred_rnn.weights.append(
@@ -181,12 +179,6 @@ class Prediction(torch.nn.Module):
             self.embed.weight = Parameter(
                 self.embed.weight.to(torch.bfloat16), requires_grad=False
             )
-        # self.pred_rnn.weights = Parameter(self.pred_rnn.weights)
-        # for layer in range(self.pred_rnn.num_layers):
-        # delattr(self.pred_rnn, self.pred_rnn._all_weights[layer][0])
-        # delattr(self.pred_rnn, self.pred_rnn._all_weights[layer][1])
-        # delattr(self.pred_rnn, self.pred_rnn._all_weights[layer][2])
-        # delattr(self.pred_rnn, self.pred_rnn._all_weights[layer][3])
 
     def forward(
         self, pre_g: Tensor, pre_hg: List[Tensor], pre_cg: List[Tensor]
@@ -208,7 +200,6 @@ class Prediction(torch.nn.Module):
         g = g.masked_fill_(sos_mask.unsqueeze(2), 0.0)
         if self.enable_bf16:
             g, hg, cg = P.lstm_amx_bf16(g, pre_hg, pre_cg, self.pred_rnn.weights)
-            # g, hg, cg = P.lstm(g, pre_hg, pre_cg, self.pred_rnn.weights)
         else:
             g, hg, cg = P.lstm(g, pre_hg, pre_cg, self.pred_rnn.weights)
         return g, hg, cg
@@ -232,10 +223,6 @@ class Joint(torch.nn.Module):
     @torch.jit.ignore
     def prepack_weights(self):
         if self.enable_bf16:
-            # self.linear1_trans.weight = Parameter(P.prepack_linear_weight(self.linear1_trans.weight.to(torch.bfloat16)), requires_grad=False)
-            # self.linear1_trans.bias = Parameter(self.linear1_trans.bias.to(torch.bfloat16), requires_grad=False)
-            # self.linear1_pred.weight = Parameter(P.prepack_linear_weight(self.linear1_pred.weight.to(torch.bfloat16)), requires_grad=False)
-            # self.linear1_pred.bias = Parameter(self.linear1_pred.bias.to(torch.bfloat16), requires_grad=False)
             self.linear1_bias = Parameter(
                 self.linear1_trans.bias + self.linear1_pred.bias, requires_grad=False
             )
@@ -251,7 +238,6 @@ class Joint(torch.nn.Module):
                 ),
                 requires_grad=False,
             )
-            # self.linear2.weight = Parameter(self.linear2.weight.to(torch.bfloat16).transpose(1, 0), requires_grad=False)
             self.linear2.weight = Parameter(
                 transpose_tile_weight_bf16(
                     self.linear2.weight.to(torch.bfloat16).transpose(1, 0), True
@@ -269,7 +255,6 @@ class Joint(torch.nn.Module):
             self.linear1_pred.weight = Parameter(
                 P.prepack_linear_weight(self.linear1_pred.weight), requires_grad=False
             )
-        # self.linear2.weight = Parameter(P.prepack_linear_weight(self.linear2.weight), requires_grad=False)
 
     def forward(self, f: Tensor, g: Tensor, padded_batch_size: int = 1) -> Tensor:
         """
@@ -296,10 +281,6 @@ class Joint(torch.nn.Module):
                 y = y[:remainder, ...]
             else:
                 y = P.amx_linear_i16o32(y, self.linear2.weight, self.linear2.bias)
-            # y = P.linear(f, self.linear1_trans.weight, self.linear1_trans.bias, None, None)
-            # y += P.linear(g, self.linear1_pred.weight, self.linear1_pred.bias, None, None)
-            # y = self.relu(y)
-            # y = P.linear(y, self.linear2.weight, self.linear2.bias, None, None)
         else:
             y = self.linear1_trans(f)
             y += self.linear1_pred(g)
