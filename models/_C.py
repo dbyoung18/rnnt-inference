@@ -5,9 +5,11 @@ import torch
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 
-if sys.platform == 'darwin':
-    torch.ops.load_library(script_dir + "/../build/mlperf_plugins/libmlperf_plugins.dylib")
-elif sys.platform == 'linux':
+if sys.platform == "darwin":
+    torch.ops.load_library(
+        script_dir + "/../build/mlperf_plugins/libmlperf_plugins.dylib"
+    )
+elif sys.platform == "linux":
     torch.ops.load_library(script_dir + "/../build/mlperf_plugins/libmlperf_plugins.so")
 
 linear = torch.ops.intel_mlperf.linear

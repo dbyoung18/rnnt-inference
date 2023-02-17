@@ -13,7 +13,7 @@ def clamp_and_round(inputs: Tensor, _min: float, _max: float):
     return torch.round(torch.clamp(inputs, _min, _max))
 
 
-class QuantDescriptor():
+class QuantDescriptor:
     def __init__(self, axis=None, amax=None, mode="quant", **kwargs):
         self._axis = axis
         self._amax = amax
@@ -46,9 +46,13 @@ class QuantDescriptor():
         return self._narrow_bound
 
 
-QUANT_LINEAR_ACTIVA = QuantDescriptor(axis=None, amax=None, mode="fake_quant", update_amax=False)
+QUANT_LINEAR_ACTIVA = QuantDescriptor(
+    axis=None, amax=None, mode="fake_quant", update_amax=False
+)
 QUANT_LINEAR_WEIGHT = QuantDescriptor(axis=None, amax=None, mode="fake_quant")
-QUANT_LSTM_ACTIVA = QuantDescriptor(axis=None, amax=None, mode="fake_quant", update_amax=False)
+QUANT_LSTM_ACTIVA = QuantDescriptor(
+    axis=None, amax=None, mode="fake_quant", update_amax=False
+)
 QUANT_LSTM_WEIGHT = QuantDescriptor(axis=None, amax=None, mode="fake_quant")
 
 
@@ -60,14 +64,21 @@ class TensorQuantizer(nn.Module):
         mode: calib/quant/fake_quant
 
     """
+
     def __init__(self, quant_desc=QuantDescriptor(), **kwargs):
         super(TensorQuantizer, self).__init__()
         self._mode = quant_desc.mode
         self._axis = quant_desc._axis
-        self._max_bound = torch.tensor(127., dtype=torch.float32)
-        self._min_bound = -self._max_bound if quant_desc.narrow_bound else -self._max_bound-1
-        self.amax = torch.tensor(quant_desc._amax) if quant_desc._amax != None else torch.tensor(0.)
-        self._scale = torch.tensor(0.)
+        self._max_bound = torch.tensor(127.0, dtype=torch.float32)
+        self._min_bound = (
+            -self._max_bound if quant_desc.narrow_bound else -self._max_bound - 1
+        )
+        self.amax = (
+            torch.tensor(quant_desc._amax)
+            if quant_desc._amax != None
+            else torch.tensor(0.0)
+        )
+        self._scale = torch.tensor(0.0)
         self._name = kwargs.pop("name", "TensorQuantizer")
         self._update_amax = quant_desc.update_amax  # dynamic
         self._track_amax = False
@@ -113,7 +124,9 @@ class TensorQuantizer(nn.Module):
     def _fake_quant_forward(self, inputs):
         if self._update_amax:
             if self._axis != None:
-                self.amax = torch.max(inputs.abs(), self._axis).values.unsqueeze(self._axis)
+                self.amax = torch.max(inputs.abs(), self._axis).values.unsqueeze(
+                    self._axis
+                )
             else:
                 self.amax = torch.max(inputs.abs())
 
@@ -141,6 +154,7 @@ class TensorQuantizer(nn.Module):
         s += f" min_bound=${self._min_bound}"
         return s
 
+
 def transpose_tile_weight_bf16(weight, padding: bool = False):
     row = weight.shape[0]
     col = weight.shape[1]
@@ -158,6 +172,7 @@ def transpose_tile_weight_bf16(weight, padding: bool = False):
     weight = weight.permute(2, 3, 0, 1, 4).contiguous()
 
     return weight
+
 
 def transpose_tile_weight(weight, padding: bool = False):
     row = weight.shape[0]
@@ -196,11 +211,13 @@ class WeightQuantizer(TensorQuantizer):
     def _fake_quant_forward(self, inputs):
         if self._scale == None:
             if self._axis != None:
-                self.amax = torch.max(inputs.abs(), self._axis).values.unsqueeze(self._axis)
+                self.amax = torch.max(inputs.abs(), self._axis).values.unsqueeze(
+                    self._axis
+                )
             else:
                 self.amax = torch.max(inputs.abs())
             self.scale = self._max_bound / self.amax
-        
+
         outputs = round_and_clamp(inputs * self.scale, self._min_bound, self._max_bound)
         outputs /= self.scale
         return outputs

@@ -13,17 +13,32 @@ from utils import *
 
 
 class RNNT(torch.nn.Module):
-    def __init__(self, model_path=None, run_mode=None, enable_bf16=False, load_jit=False):
+    def __init__(
+        self, model_path=None, run_mode=None, enable_bf16=False, load_jit=False
+    ):
         super().__init__()
         self.transcription = Transcription(run_mode)
         self.prediction = Prediction(enable_bf16)
         self.joint = Joint(enable_bf16)
         self.update = GreedyDecoderUpdate()
         if model_path is not None:
-            saved_quantizers = False if run_mode == None or run_mode == "f32" or run_mode == "calib" else True
-            self._load_model(model_path, run_mode, enable_bf16, load_jit, saved_quantizers)
+            saved_quantizers = (
+                False
+                if run_mode == None or run_mode == "f32" or run_mode == "calib"
+                else True
+            )
+            self._load_model(
+                model_path, run_mode, enable_bf16, load_jit, saved_quantizers
+            )
 
-    def _load_model(self, model_path, run_mode=None, enable_bf16=False, load_jit=False, saved_quantizers=False):
+    def _load_model(
+        self,
+        model_path,
+        run_mode=None,
+        enable_bf16=False,
+        load_jit=False,
+        saved_quantizers=False,
+    ):
         if load_jit and os.path.exists(model_path):
             model = torch.jit.load(model_path, map_location="cpu")
             self.transcription = model.transcription
@@ -49,11 +64,17 @@ class RNNT(torch.nn.Module):
             self.transcription.post_rnn._process_parameters(run_mode)
             # self.joint.linear1_trans._quant_parameters(run_mode)
             if run_mode == "quant":
-                self.transcription.pre_rnn.lstm1.output_quantizer = self.transcription.post_rnn.lstm0.input_quantizer
+                self.transcription.pre_rnn.lstm1.output_quantizer = (
+                    self.transcription.post_rnn.lstm0.input_quantizer
+                )
                 self.transcription.pre_rnn._propagate_quantizers()
                 self.transcription.post_rnn._propagate_quantizers()
-                self.transcription.pre_quantizer = self.transcription.pre_rnn.lstm0.input_quantizer
-                self.transcription.post_quantizer = self.transcription.post_rnn.lstm0.input_quantizer
+                self.transcription.pre_quantizer = (
+                    self.transcription.pre_rnn.lstm0.input_quantizer
+                )
+                self.transcription.post_quantizer = (
+                    self.transcription.post_rnn.lstm0.input_quantizer
+                )
         if load_jit == False:
             self.prediction.prepack_weights()
         if load_jit == False and enable_bf16:
@@ -68,34 +89,39 @@ class Transcription(torch.nn.Module):
                 RNNTParam.trans_input_size,
                 RNNTParam.trans_hidden_size,
                 RNNTParam.pre_num_layers,
-                skip_quant_y=False
+                skip_quant_y=False,
             )
             self.post_rnn = iLSTM(
-                RNNTParam.trans_hidden_size*RNNTParam.stack_time_factor,
+                RNNTParam.trans_hidden_size * RNNTParam.stack_time_factor,
                 RNNTParam.trans_hidden_size,
                 RNNTParam.post_num_layers,
-                skip_quant_y=True
+                skip_quant_y=True,
             )
         else:
             self.pre_rnn = QuantLSTM(
                 RNNTParam.trans_input_size,
                 RNNTParam.trans_hidden_size,
                 RNNTParam.pre_num_layers,
-                skip_quant_y=False
+                skip_quant_y=False,
             )
             self.post_rnn = QuantLSTM(
-                RNNTParam.trans_hidden_size*RNNTParam.stack_time_factor,
+                RNNTParam.trans_hidden_size * RNNTParam.stack_time_factor,
                 RNNTParam.trans_hidden_size,
                 RNNTParam.post_num_layers,
-                skip_quant_y=True
+                skip_quant_y=True,
             )
         self.stack_time = StackTime(RNNTParam.stack_time_factor, run_mode)
         self.run_mode = run_mode
 
-    def forward(self,
-            x: Tensor, x_lens: Tensor,
-            pre_hx: List[Tensor], pre_cx: List[Tensor],
-            post_hx: List[Tensor], post_cx: List[Tensor]) -> Tuple[Tensor, List[Tensor], List[Tensor], List[Tensor], List[Tensor]]:
+    def forward(
+        self,
+        x: Tensor,
+        x_lens: Tensor,
+        pre_hx: List[Tensor],
+        pre_cx: List[Tensor],
+        post_hx: List[Tensor],
+        post_cx: List[Tensor],
+    ) -> Tuple[Tensor, List[Tensor], List[Tensor], List[Tensor], List[Tensor]]:
         """
         Args:
           x: {T, N, IC}
@@ -123,13 +149,12 @@ class Prediction(torch.nn.Module):
         super().__init__()
         self.sos = RNNTParam.SOS
         self.embed = torch.nn.Embedding(
-            RNNTParam.num_labels-1,
-            RNNTParam.pred_hidden_size
+            RNNTParam.num_labels - 1, RNNTParam.pred_hidden_size
         )
         self.pred_rnn = torch.nn.LSTM(
             RNNTParam.pred_hidden_size,
             RNNTParam.pred_hidden_size,
-            RNNTParam.pred_num_layers
+            RNNTParam.pred_num_layers,
         )
         self.enable_bf16 = enable_bf16
 
@@ -142,23 +167,30 @@ class Prediction(torch.nn.Module):
                 w_ih, w_hh = w_ih.to(torch.bfloat16), w_hh.to(torch.bfloat16)
                 prepacked_w_ih = transpose_tile_weight_bf16(w_ih.transpose(1, 0))
                 prepacked_w_hh = transpose_tile_weight_bf16(w_hh.transpose(1, 0))
-                self.pred_rnn.weights.append([prepacked_w_ih, prepacked_w_hh, b_ih, b_hh + b_ih])
+                self.pred_rnn.weights.append(
+                    [prepacked_w_ih, prepacked_w_hh, b_ih, b_hh + b_ih]
+                )
                 # prepacked_w_ih, prepacked_w_hh = P.prepack_lstm_weights(w_ih, w_hh)
                 # self.pred_rnn.weights.append([prepacked_w_ih, prepacked_w_hh, b_ih.requires_grad_(False), b_hh.requires_grad_(False)])
             else:
                 prepacked_w_ih, prepacked_w_hh = P.prepack_lstm_weights(w_ih, w_hh)
-                self.pred_rnn.weights.append([prepacked_w_ih, prepacked_w_hh, b_ih, b_hh])
+                self.pred_rnn.weights.append(
+                    [prepacked_w_ih, prepacked_w_hh, b_ih, b_hh]
+                )
         if self.enable_bf16:
-            self.embed.weight = Parameter(self.embed.weight.to(torch.bfloat16), requires_grad=False)
+            self.embed.weight = Parameter(
+                self.embed.weight.to(torch.bfloat16), requires_grad=False
+            )
         # self.pred_rnn.weights = Parameter(self.pred_rnn.weights)
         # for layer in range(self.pred_rnn.num_layers):
-            # delattr(self.pred_rnn, self.pred_rnn._all_weights[layer][0])
-            # delattr(self.pred_rnn, self.pred_rnn._all_weights[layer][1])
-            # delattr(self.pred_rnn, self.pred_rnn._all_weights[layer][2])
-            # delattr(self.pred_rnn, self.pred_rnn._all_weights[layer][3])
+        # delattr(self.pred_rnn, self.pred_rnn._all_weights[layer][0])
+        # delattr(self.pred_rnn, self.pred_rnn._all_weights[layer][1])
+        # delattr(self.pred_rnn, self.pred_rnn._all_weights[layer][2])
+        # delattr(self.pred_rnn, self.pred_rnn._all_weights[layer][3])
 
-    def forward(self, pre_g: Tensor,
-            pre_hg: List[Tensor], pre_cg: List[Tensor]) -> Tuple[Tensor, List[Tensor], List[Tensor]]:
+    def forward(
+        self, pre_g: Tensor, pre_hg: List[Tensor], pre_cg: List[Tensor]
+    ) -> Tuple[Tensor, List[Tensor], List[Tensor]]:
         """
         Args:
           pre_g: {U, N}
@@ -186,17 +218,14 @@ class Joint(torch.nn.Module):
     def __init__(self, enable_bf16, **kwargs):
         super().__init__()
         self.linear1_trans = Linear(
-            RNNTParam.trans_hidden_size,
-            RNNTParam.joint_hidden_size
+            RNNTParam.trans_hidden_size, RNNTParam.joint_hidden_size
         )
         self.linear1_pred = torch.nn.Linear(
-            RNNTParam.pred_hidden_size,
-            RNNTParam.joint_hidden_size
+            RNNTParam.pred_hidden_size, RNNTParam.joint_hidden_size
         )
         self.relu = torch.nn.ReLU()
         self.linear2 = torch.nn.Linear(
-            RNNTParam.joint_hidden_size,
-            RNNTParam.num_labels
+            RNNTParam.joint_hidden_size, RNNTParam.num_labels
         )
         self.enable_bf16 = enable_bf16
 
@@ -207,16 +236,39 @@ class Joint(torch.nn.Module):
             # self.linear1_trans.bias = Parameter(self.linear1_trans.bias.to(torch.bfloat16), requires_grad=False)
             # self.linear1_pred.weight = Parameter(P.prepack_linear_weight(self.linear1_pred.weight.to(torch.bfloat16)), requires_grad=False)
             # self.linear1_pred.bias = Parameter(self.linear1_pred.bias.to(torch.bfloat16), requires_grad=False)
-            self.linear1_bias = Parameter(self.linear1_trans.bias + self.linear1_pred.bias, requires_grad=False)
-            self.linear1_trans.weight = Parameter(transpose_tile_weight_bf16(self.linear1_trans.weight.to(torch.bfloat16).transpose(1, 0)), requires_grad=False)
-            self.linear1_pred.weight = Parameter(transpose_tile_weight_bf16(self.linear1_pred.weight.to(torch.bfloat16).transpose(1, 0)), requires_grad=False)
+            self.linear1_bias = Parameter(
+                self.linear1_trans.bias + self.linear1_pred.bias, requires_grad=False
+            )
+            self.linear1_trans.weight = Parameter(
+                transpose_tile_weight_bf16(
+                    self.linear1_trans.weight.to(torch.bfloat16).transpose(1, 0)
+                ),
+                requires_grad=False,
+            )
+            self.linear1_pred.weight = Parameter(
+                transpose_tile_weight_bf16(
+                    self.linear1_pred.weight.to(torch.bfloat16).transpose(1, 0)
+                ),
+                requires_grad=False,
+            )
             # self.linear2.weight = Parameter(self.linear2.weight.to(torch.bfloat16).transpose(1, 0), requires_grad=False)
-            self.linear2.weight = Parameter(transpose_tile_weight_bf16(self.linear2.weight.to(torch.bfloat16).transpose(1, 0), True), requires_grad=False)
+            self.linear2.weight = Parameter(
+                transpose_tile_weight_bf16(
+                    self.linear2.weight.to(torch.bfloat16).transpose(1, 0), True
+                ),
+                requires_grad=False,
+            )
             b = self.linear2.bias
-            self.linear2.bias = Parameter(F.pad(b, (0, 32 - b.shape[-1] % 32), "constant", 0), requires_grad=False)
+            self.linear2.bias = Parameter(
+                F.pad(b, (0, 32 - b.shape[-1] % 32), "constant", 0), requires_grad=False
+            )
         else:
-            self.linear1_trans.weight = Parameter(P.prepack_linear_weight(self.linear1_trans.weight), requires_grad=False)
-            self.linear1_pred.weight = Parameter(P.prepack_linear_weight(self.linear1_pred.weight), requires_grad=False)
+            self.linear1_trans.weight = Parameter(
+                P.prepack_linear_weight(self.linear1_trans.weight), requires_grad=False
+            )
+            self.linear1_pred.weight = Parameter(
+                P.prepack_linear_weight(self.linear1_pred.weight), requires_grad=False
+            )
         # self.linear2.weight = Parameter(P.prepack_linear_weight(self.linear2.weight), requires_grad=False)
 
     def forward(self, f: Tensor, g: Tensor, padded_batch_size: int = 1) -> Tensor:
@@ -229,7 +281,13 @@ class Joint(torch.nn.Module):
           y: {N, T=1, U=1, K}
         """
         if self.enable_bf16:
-            y = P.amx_linear_bf16_accum_relu(f, self.linear1_trans.weight, g, self.linear1_pred.weight, self.linear1_bias)
+            y = P.amx_linear_bf16_accum_relu(
+                f,
+                self.linear1_trans.weight,
+                g,
+                self.linear1_pred.weight,
+                self.linear1_bias,
+            )
             # pad N to ensure last linear compute
             remainder = y.shape[0] % padded_batch_size
             if remainder != 0:
@@ -275,7 +333,7 @@ class StackTime(torch.nn.Module):
     def forward_f32(self, x: Tensor, x_lens: Tensor) -> Tensor:
         x_lens = x_lens.to(torch.int64)
         for batch_idx in range(x.size(1)):
-            x[x_lens[batch_idx]:, batch_idx, :] = 0
+            x[x_lens[batch_idx] :, batch_idx, :] = 0
         T, N, C = x.shape
         x = torch.transpose(x, 0, 1)
         zeros = torch.zeros(N, T % self.factor, C, dtype=x.dtype, device=x.device)
@@ -293,11 +351,34 @@ class GreedyDecoderUpdate(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
-    def forward(self,
-            symbols: Tensor, symbols_added: Tensor, res: Tensor, res_idx: Tensor,
-            f: Tensor, f_lens: Tensor, time_idx: Tensor, fi: Tensor,
-            pre_g:Tensor, pre_hg: List[Tensor], pre_cg: List[Tensor], hg: List[Tensor], cg: List[Tensor]) -> bool:
+    def forward(
+        self,
+        symbols: Tensor,
+        symbols_added: Tensor,
+        res: Tensor,
+        res_idx: Tensor,
+        f: Tensor,
+        f_lens: Tensor,
+        time_idx: Tensor,
+        fi: Tensor,
+        pre_g: Tensor,
+        pre_hg: List[Tensor],
+        pre_cg: List[Tensor],
+        hg: List[Tensor],
+        cg: List[Tensor],
+    ) -> bool:
         return P.greedy_decode_update(
-            symbols, symbols_added, res, res_idx,
-            f, f_lens, time_idx, fi,
-            pre_g, pre_hg, pre_cg, hg, cg)
+            symbols,
+            symbols_added,
+            res,
+            res_idx,
+            f,
+            f_lens,
+            time_idx,
+            fi,
+            pre_g,
+            pre_hg,
+            pre_cg,
+            hg,
+            cg,
+        )

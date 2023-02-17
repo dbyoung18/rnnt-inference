@@ -23,21 +23,35 @@ import tqdm
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Download, verify and extract dataset files')
-    parser.add_argument('-i', '--input_csv', type=str,
-                        help='CSV file with urls and checksums to download.')
-    parser.add_argument('-d', '--download_dir', type=str,
-                        help='Download destnation folder.')
-    parser.add_argument('-e', '--extract_dir', type=str, default=None,
-                        help='Extraction destnation folder. Defaults to download folder if not provided')
-    parser.add_argument('--skip_download', action='store_true',
-                        help='Skip downloading the files')
-    parser.add_argument('--skip_checksum', action='store_true',
-                        help='Skip checksum')
-    parser.add_argument('--skip_extract', action='store_true',
-                        help='Skip extracting files')
+    parser = argparse.ArgumentParser(
+        description="Download, verify and extract dataset files"
+    )
+    parser.add_argument(
+        "-i",
+        "--input_csv",
+        type=str,
+        help="CSV file with urls and checksums to download.",
+    )
+    parser.add_argument(
+        "-d", "--download_dir", type=str, help="Download destnation folder."
+    )
+    parser.add_argument(
+        "-e",
+        "--extract_dir",
+        type=str,
+        default=None,
+        help="Extraction destnation folder. Defaults to download folder if not provided",
+    )
+    parser.add_argument(
+        "--skip_download", action="store_true", help="Skip downloading the files"
+    )
+    parser.add_argument("--skip_checksum", action="store_true", help="Skip checksum")
+    parser.add_argument(
+        "--skip_extract", action="store_true", help="Skip extracting files"
+    )
     args = parser.parse_args()
     return args
+
 
 def download_file(url, dest_folder, fname, overwrite=False):
     fpath = os.path.join(dest_folder, fname)
@@ -48,21 +62,23 @@ def download_file(url, dest_folder, fname, overwrite=False):
             print("File exists, skipping download.")
             return
 
-    tmp_fpath = fpath + '.tmp'
+    tmp_fpath = fpath + ".tmp"
 
     r = requests.get(url, stream=True)
-    file_size = int(r.headers['Content-Length'])
+    file_size = int(r.headers["Content-Length"])
     chunk_size = 1024 * 1024  # 1MB
     total_chunks = int(file_size / chunk_size)
 
-    with open(tmp_fpath, 'wb') as fp:
+    with open(tmp_fpath, "wb") as fp:
         content_iterator = r.iter_content(chunk_size=chunk_size)
-        chunks = tqdm.tqdm(content_iterator, total=total_chunks,
-                           unit='MB', desc=fpath, leave=True)
+        chunks = tqdm.tqdm(
+            content_iterator, total=total_chunks, unit="MB", desc=fpath, leave=True
+        )
         for chunk in chunks:
             fp.write(chunk)
 
     os.rename(tmp_fpath, fpath)
+
 
 def md5_checksum(fpath, target_hash):
     file_hash = hashlib.new("md5", usedforsecurity=False)
@@ -71,27 +87,29 @@ def md5_checksum(fpath, target_hash):
             file_hash.update(chunk)
     return file_hash.hexdigest() == target_hash
 
+
 def extract(fpath, dest_folder):
-    if fpath.endswith('.tar.gz'):
-        mode = 'r:gz'
-    elif fpath.endswith('.tar'):
-        mode = 'r:'
+    if fpath.endswith(".tar.gz"):
+        mode = "r:gz"
+    elif fpath.endswith(".tar"):
+        mode = "r:"
     else:
-        raise IOError('fpath has unknown extention: %s' % fpath)
+        raise IOError("fpath has unknown extention: %s" % fpath)
 
     with tarfile.open(fpath, mode) as tar:
         members = tar.getmembers()
         for member in tqdm.tqdm(iterable=members, total=len(members), leave=True):
             tar.extract(path=dest_folder, member=member)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     args = parse_args()
 
-    df = pd.read_csv(args.input_csv, delimiter=',')
+    df = pd.read_csv(args.input_csv, delimiter=",")
 
     if not args.skip_download:
         for url in df.url:
-            fname = url.split('/')[-1]
+            fname = url.split("/")[-1]
             print("==> Downloading %s:" % fname)
             download_file(url=url, dest_folder=args.download_dir, fname=fname)
     else:
@@ -99,11 +117,11 @@ if __name__ == '__main__':
 
     if not args.skip_checksum:
         for index, row in df.iterrows():
-            url = row['url']
-            md5 = row['md5']
-            fname = url.split('/')[-1]
+            url = row["url"]
+            md5 = row["md5"]
+            fname = url.split("/")[-1]
             fpath = os.path.join(args.download_dir, fname)
-            print("==> Verifing %s: " % fname, end='')
+            print("==> Verifing %s: " % fname, end="")
             ret = md5_checksum(fpath=fpath, target_hash=md5)
             if not ret:
                 raise ValueError(f"Checksum for {fname} failed!")
@@ -114,7 +132,7 @@ if __name__ == '__main__':
 
     if not args.skip_extract:
         for url in df.url:
-            fname = url.split('/')[-1]
+            fname = url.split("/")[-1]
             fpath = os.path.join(args.download_dir, fname)
             print("==> Decompressing %s:" % fpath)
             extract(fpath=fpath, dest_folder=args.extract_dir)

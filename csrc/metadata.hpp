@@ -1,10 +1,11 @@
 #pragma once
+#include <ATen/Parallel.h>
 #include <ATen/core/ivalue.h>
 #include <math.h>
-#include <string>
-#include <torch/script.h>
-#include <ATen/Parallel.h>
 #include <query_sample_library.h>
+#include <torch/script.h>
+
+#include <string>
 
 namespace rnnt {
 using TensorVector = std::vector<at::Tensor>;
@@ -12,8 +13,8 @@ using QuerySample = mlperf::QuerySample;
 using namespace torch::indexing;
 
 static const std::vector<char> LABELS = {
-  ' ', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n',
-  'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '\''};
+    ' ', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+    'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '\''};
 
 enum Params {
   PRE_NUM_LAYERS = 2,
@@ -32,11 +33,10 @@ enum Params {
   PADDED_INPUT_SIZE = 256
 };
 
-
 // for Offline: batch ahead
 class State {
 public:
-  State() {};
+  State(){};
   State(int32_t batch_size, int32_t split_len = -1) {
     init(batch_size, split_len);
     auto intra = at::get_num_threads();
@@ -44,7 +44,9 @@ public:
   };
   virtual ~State() = default;
   void init(int32_t batch_size, int32_t split_len = -1);
-  void update(at::Tensor x, at::Tensor x_lens, int32_t split_len = -1, int32_t actual_batch_size_ = -1);
+  void update(
+      at::Tensor x, at::Tensor x_lens, int32_t split_len = -1,
+      int32_t actual_batch_size_ = -1);
   bool next();
   void clear();
 
@@ -78,13 +80,12 @@ public:
   int32_t split_idx_ = 0;
 };
 
-
 // for Server: batch dynamic
-class PipelineState: public State {
+class PipelineState : public State {
 public:
   PipelineState();
-  PipelineState(int32_t batch_size, int32_t split_len, int32_t response_size):
-      finish_size_(batch_size), response_size_(response_size) {
+  PipelineState(int32_t batch_size, int32_t split_len, int32_t response_size)
+      : finish_size_(batch_size), response_size_(response_size) {
     init(batch_size, split_len);
     auto intra = at::get_num_threads();
     padded_batch_size_ = ceil(batch_size_ / (intra * 16)) * (intra * 16);
@@ -92,17 +93,19 @@ public:
   virtual ~PipelineState() = default;
   void init(int32_t batch_size, int32_t split_len = -1);
   void update(
-      std::vector<std::tuple<QuerySample, at::Tensor, at::Tensor>> &dequeue_list,
-      std::vector<QuerySample> &samples,
-      int32_t dequeue_size, int32_t split_len);
+      std::vector<std::tuple<QuerySample, at::Tensor, at::Tensor>>
+          &dequeue_list,
+      std::vector<QuerySample> &samples, int32_t dequeue_size,
+      int32_t split_len);
   bool next();
 
-  int32_t finish_size_;  // = require_size = padd_size_ + actual_response_size
+  int32_t finish_size_;    // = require_size = padd_size_ + actual_response_size
   int32_t response_size_;  // actual_response_size >= response_size
-  int32_t stop_size_; // = min(batch_size_, padded_size_ + response_size_)
-  int32_t remain_size_ = 0;  // remain_size_' = batch_size_ - finish_size_
+  int32_t stop_size_;      // = min(batch_size_, padded_size_ + response_size_)
+  int32_t remain_size_ = 0;   // remain_size_' = batch_size_ - finish_size_
   int32_t dequeue_size_ = 0;  // <= finish_size_
-  int32_t padded_size_ = 0;  // batch_size_ = remain_size_ + dequeue_size_ + padded_size_
+  int32_t padded_size_ =
+      0;  // batch_size_ = remain_size_ + dequeue_size_ + padded_size_
   // transcription
   at::Tensor F_;
   at::Tensor F_lens_;

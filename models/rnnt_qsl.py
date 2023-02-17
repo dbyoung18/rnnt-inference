@@ -8,9 +8,9 @@ class RNNTQSL:
         self.count = len(self.dataset[0])
         perf_count = self.count if perf_count is None else perf_count
         self.sample_id_to_sample = {}
-        self.qsl = lg.ConstructQSL(self.count, perf_count,
-                                   self.load_query_samples,
-                                   self.unload_query_samples)
+        self.qsl = lg.ConstructQSL(
+            self.count, perf_count, self.load_query_samples, self.unload_query_samples
+        )
         self.load_query_samples(range(self.count))
         print(f"Number of samples: {self.count}")
 

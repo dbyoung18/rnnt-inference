@@ -1,44 +1,44 @@
+#include "torch_sut.hpp"
+
 #include <ATen/core/grad_mode.h>
 #include <c10/util/TypeCast.h>
-#include <vector>
-#include <list>
-#include <chrono>
-#include <algorithm>
-#include <condition_variable>
-#include <type_traits>
 #include <issue_query_controller.h>
 #include <loadgen.h>
 #include <logging.h>
 #include <query_sample.h>
-#include <iostream>
-#include <fstream>
-#include <thread>
-#include <cmath>
 
-#include "torch_sut.hpp"
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <condition_variable>
+#include <fstream>
+#include <iostream>
+#include <list>
+#include <thread>
+#include <type_traits>
+#include <vector>
+
 #include "utils.hpp"
 
-
-namespace rnnt{
+namespace rnnt {
 BaseSUT::BaseSUT(
-    const std::string& sample_file,
-    const std::string& model_file,
-    const std::string& processor_file,
-    int batch_size,
-    int split_len,
-    const std::string test_scenario,
-    bool processor,
-    const std::string& profiler_folder,
-    int profiler_iter,
-    int warmup_iter
-  ) : qsl_(sample_file), model_(model_file), processor_(processor_file),
-  mThreshold_(batch_size), split_len_(split_len),
-  test_scenario_(test_scenario), processor_flag_(processor),
-  profiler_folder_(profiler_folder), profiler_iter_(profiler_iter),
-  warmup_iter_(warmup_iter) {
-
+    const std::string& sample_file, const std::string& model_file,
+    const std::string& processor_file, int batch_size, int split_len,
+    const std::string test_scenario, bool processor,
+    const std::string& profiler_folder, int profiler_iter, int warmup_iter)
+    : qsl_(sample_file),
+      model_(model_file),
+      processor_(processor_file),
+      mThreshold_(batch_size),
+      split_len_(split_len),
+      test_scenario_(test_scenario),
+      processor_flag_(processor),
+      profiler_folder_(profiler_folder),
+      profiler_iter_(profiler_iter),
+      warmup_iter_(warmup_iter) {
   // Get HW info
-  nMaxThread_ = std::thread::hardware_concurrency();  // (mHT_ + 1) * nSockets_ * nCoresPerSocket_
+  nMaxThread_ = std::thread::hardware_concurrency();  // (mHT_ + 1) * nSockets_
+                                                      // * nCoresPerSocket_
   nMaxProc_ = kmp::KMPLauncher::getMaxProc();
   nSockets_ = 2;  // assume 2 sockets
   nCoresPerSocket_ = nMaxProc_ / nSockets_ / 2;
@@ -58,8 +58,7 @@ void BaseSUT::IssueQuery(const std::vector<mlperf::QuerySample>& samples) {
     // Parallel sort samples into a queue
     mQueue_ = qsl_.Sort(samples);
   } else {
-    for (auto sample : samples)
-      mQueue_.emplace_back(sample);
+    for (auto sample : samples) mQueue_.emplace_back(sample);
   }
   ctrl_.notify_one();
 }
@@ -84,42 +83,42 @@ BaseSUT::~BaseSUT() {
     ctrl_.notify_all();
   }
 
-  for (auto& Instance : mInstances_)
-    Instance.join();
+  for (auto& Instance : mInstances_) Instance.join();
 }
 
 OfflineSUT::OfflineSUT(
-    const std::string& sample_file,
-    const std::string& model_file,
-    const std::string& processor_file,
-    int inter_parallel,
-    int intra_parallel,
-    int batch_size,
-    int split_len,
-    const std::string test_scenario,
-    bool processor,
-    const std::string& profiler_folder,
-    int profiler_iter,
-    int warmup_iter
-  ) : BaseSUT(sample_file, model_file, processor_file,
-      batch_size, split_len,
-      test_scenario, processor,
-      profiler_folder, profiler_iter, warmup_iter),
-      nInstances_(inter_parallel), nThreadsPerInstance_(intra_parallel) {
-
+    const std::string& sample_file, const std::string& model_file,
+    const std::string& processor_file, int inter_parallel, int intra_parallel,
+    int batch_size, int split_len, const std::string test_scenario,
+    bool processor, const std::string& profiler_folder, int profiler_iter,
+    int warmup_iter)
+    : BaseSUT(
+          sample_file, model_file, processor_file, batch_size, split_len,
+          test_scenario, processor, profiler_folder, profiler_iter,
+          warmup_iter),
+      nInstances_(inter_parallel),
+      nThreadsPerInstance_(intra_parallel) {
   // Verify nInstances_
-  if ((nThreadsPerInstance_ * nInstances_) > (nMaxThread_ / (mHt_+1)))
+  if ((nThreadsPerInstance_ * nInstances_) > (nMaxThread_ / (mHt_ + 1)))
     nInstances_ = nMaxThread_ / (mHt_ + 1) / nThreadsPerInstance_;
 
   // Construct instances & bind core(assume 2 sockets)
   int part[] = {nMaxThread_, nMaxThread_ - nCoresPerSocket_};
   std::vector<int> instance_root(nInstances_);
-  std::generate(instance_root.begin(), instance_root.end(), [=, index = 0, root = 0]() mutable
-      {root=part[index & 1] - nThreadsPerInstance_ * ((index >> 1) + 1); ++index; return root;});
+  std::generate(
+      instance_root.begin(), instance_root.end(),
+      [=, index = 0, root = 0]() mutable {
+        root = part[index & 1] - nThreadsPerInstance_ * ((index >> 1) + 1);
+        ++index;
+        return root;
+      });
 
-  for (int i = 0; i < nInstances_; ++ i) {
-    mInstances_.emplace_back(&OfflineSUT::thInstance, this, i, instance_root[i]);
-    std::cout << "Binding instance " << i << " to " << instance_root[i] << "-" << instance_root[i] + nThreadsPerInstance_ - 1 << std::endl << std::flush;
+  for (int i = 0; i < nInstances_; ++i) {
+    mInstances_.emplace_back(
+        &OfflineSUT::thInstance, this, i, instance_root[i]);
+    std::cout << "Binding instance " << i << " to " << instance_root[i] << "-"
+              << instance_root[i] + nThreadsPerInstance_ - 1 << std::endl
+              << std::flush;
   }
 }
 
@@ -129,9 +128,11 @@ void OfflineSUT::warmup(int which, int warmup_iter) {
   at::Tensor x, x_lens;
   rnnt::State state(mThreshold_, split_len_);
   for (int i = 0; i < warmup_iter; ++i) {
-    std::tie(x, x_lens) = qsl_.GenerateDummySamples(batch_size, processor_flag_);
+    std::tie(x, x_lens) =
+        qsl_.GenerateDummySamples(batch_size, processor_flag_);
     if (processor_flag_)
-      std::tie(x, x_lens) = processor_.forward(which, x, x_lens, pad_batch_size_);
+      std::tie(x, x_lens) =
+          processor_.forward(which, x, x_lens, pad_batch_size_);
     x = x.permute({2, 0, 1}).contiguous();
     state.update(x, x_lens, split_len_);
     model_.forward(which, state);
@@ -145,27 +146,27 @@ void OfflineSUT::thInstance(int index, int root) {
   at::NoGradGuard no_grad;
 
   kmp::KMPLauncher thCtrl;
-  std::vector<int> places (nThreadsPerInstance_);
+  std::vector<int> places(nThreadsPerInstance_);
   auto which = index & 1;
 
-  for (int i = 0; i < nThreadsPerInstance_; ++ i)
-    places[i] = (root + i);
+  for (int i = 0; i < nThreadsPerInstance_; ++i) places[i] = (root + i);
 
   thCtrl.setAffinityPlaces(places).pinThreads();
 
-  if (warmup_iter_ > 0)
-    warmup(which, warmup_iter_);
+  if (warmup_iter_ > 0) warmup(which, warmup_iter_);
 
   Queue_t snippet;
 
   // Wait for work
   std::string log_name;
   if (profiler_iter_ > 0) {
-    log_name = profiler_folder_ + "/" + Name() + "_" + std::to_string(index) + "_" + std::to_string(which) + ".json";
+    log_name = profiler_folder_ + "/" + Name() + "_" + std::to_string(index) +
+               "_" + std::to_string(which) + ".json";
     std::ofstream out(log_name);
   }
   {
-    auto guard_ = std::make_unique<ProfileRecord>((profiler_iter_ > 0), log_name);
+    auto guard_ =
+        std::make_unique<ProfileRecord>((profiler_iter_ > 0), log_name);
     rnnt::State state(mThreshold_, split_len_);
     size_t nIteration = 0;
     // long process_dur = 0, encode_dur = 0, decode_dur = 0;
@@ -173,10 +174,9 @@ void OfflineSUT::thInstance(int index, int root) {
       // critical section
       {
         std::unique_lock<std::mutex> l(mtx_);
-        ctrl_.wait(l, [this] {return mStop_ || !mQueue_.empty();});
+        ctrl_.wait(l, [this] { return mStop_ || !mQueue_.empty(); });
 
-        if (mStop_)
-          break;
+        if (mStop_) break;
 
         auto nPeek = std::min(mQueue_.size(), mThreshold_);
         auto it = mQueue_.begin();
@@ -192,26 +192,32 @@ void OfflineSUT::thInstance(int index, int root) {
 
       std::vector<mlperf::QuerySample> samples(snippet.begin(), snippet.end());
       std::vector<mlperf::QuerySampleIndex> indices(samples.size());
-      std::transform(samples.cbegin(), samples.cend(), indices.begin(),
-          [](mlperf::QuerySample sample) {return sample.index;});
+      std::transform(
+          samples.cbegin(), samples.cend(), indices.begin(),
+          [](mlperf::QuerySample sample) { return sample.index; });
 
       auto actual_batch_size = int(samples.size());
       at::Tensor x, x_lens;
       if (processor_flag_) {
         // pad T to max_len in batch
-        std::tie(x, x_lens) = qsl_.AssembleSamples(std::move(indices), processor_flag_);
-        std::tie(x, x_lens) = processor_.forward(which, x, x_lens, pad_batch_size_);
+        std::tie(x, x_lens) =
+            qsl_.AssembleSamples(std::move(indices), processor_flag_);
+        std::tie(x, x_lens) =
+            processor_.forward(which, x, x_lens, pad_batch_size_);
         // auto processor_end = mlperf::PerfClock::now();
         // process_dur = get_duration(iter_start, processor_end);
         // std::cout << "Instance," << index << ",iter," << nIteration
-        //     << ",max_len," << x_lens[0].item().toInt() << ",bs," << samples.size()
+        //     << ",max_len," << x_lens[0].item().toInt() << ",bs," <<
+        //     samples.size()
         //     << ",proc," << process_dur << std::endl << std::flush;
-        // BaseSUT::QuerySamplesComplete(samples, x); continue;  // Test processor only(response {N, C, T})
+        // BaseSUT::QuerySamplesComplete(samples, x); continue;  // Test
+        // processor only(response {N, C, T})
         x = x.permute({2, 0, 1}).contiguous();
       } else {
         // pad T to max_len in batch & pad N to ensure last batch accuracy
         auto padded_batch_size = ceil(actual_batch_size / 32) * 32;
-        std::tie(x, x_lens) = qsl_.AssembleSamples(std::move(indices), processor_flag_, padded_batch_size);
+        std::tie(x, x_lens) = qsl_.AssembleSamples(
+            std::move(indices), processor_flag_, padded_batch_size);
       }
 
       state.update(x, x_lens, split_len_, actual_batch_size);
@@ -229,8 +235,10 @@ void OfflineSUT::thInstance(int index, int root) {
       // std::cout << "finish response" << std::endl << std::flush;
 
       // std::cout << "Instance," << index << ",iter," << nIteration
-      //     << ",max_len," << state.f_lens_[0].item().toInt() << ",bs," << samples.size()
-      //     << ",proc," << process_dur << ",enc," << encode_dur << ",dec," << decode_dur
+      //     << ",max_len," << state.f_lens_[0].item().toInt() << ",bs," <<
+      //     samples.size()
+      //     << ",proc," << process_dur << ",enc," << encode_dur << ",dec," <<
+      //     decode_dur
       //     << ",lat," << get_duration(iter_start) << std::endl << std::flush;
 
       nIteration += 1;
@@ -241,8 +249,7 @@ void OfflineSUT::thInstance(int index, int root) {
 }
 
 void OfflineSUT::QuerySamplesComplete(
-    const std::vector<mlperf::QuerySample>& samples,
-    const rnnt::State& state) {
+    const std::vector<mlperf::QuerySample>& samples, const rnnt::State& state) {
   std::vector<mlperf::QuerySampleResponse> responses(state.actual_batch_size_);
   auto res_lens = state.res_idx_ + 1;
 
@@ -251,75 +258,100 @@ void OfflineSUT::QuerySamplesComplete(
     responses[i].id = samples[i].id;
     responses[i].data = reinterpret_cast<uintptr_t>(state.res_[i].data_ptr());
     responses[i].size = res_len * 4;
-    // std::cout << samples[i].index << "::" << models::TorchModel::sequence_to_string(state.res_[i], res_len) << std::endl << std::flush;
+    // std::cout << samples[i].index << "::" <<
+    // models::TorchModel::sequence_to_string(state.res_[i], res_len) <<
+    // std::endl << std::flush;
   }
   mlperf::QuerySamplesComplete(responses.data(), responses.size());
 }
 
 ServerSUT::ServerSUT(
-    const std::string& sample_file,
-    const std::string& model_file,
-    const std::string& processor_file,
-    int pro_inter_parallel,
-    int pro_intra_parallel,
-    int inter_parallel,
-    int intra_parallel,
-    int pro_batch_size,
-    int batch_size,
-    int split_len,
-    int response_size,
-    int qos_len,
-    std::string test_scenario,
-    bool processor,
-    const std::string& profiler_folder,
-    int profiler_iter,
-    int warmup_iter
-  ) : BaseSUT(sample_file, model_file, processor_file,
-      batch_size, split_len,
-      test_scenario, processor,
-      profiler_folder, profiler_iter, warmup_iter),
-      nProducers_(pro_inter_parallel), nThreadsPerProducer_(pro_intra_parallel),
-      nConsumers_(inter_parallel), nThreadsPerConsumer_(intra_parallel),
-      mProThreshold_(pro_batch_size), mLengthThreshold_(qos_len), mProcessedQueue_(3000) {
-
+    const std::string& sample_file, const std::string& model_file,
+    const std::string& processor_file, int pro_inter_parallel,
+    int pro_intra_parallel, int inter_parallel, int intra_parallel,
+    int pro_batch_size, int batch_size, int split_len, int response_size,
+    int qos_len, std::string test_scenario, bool processor,
+    const std::string& profiler_folder, int profiler_iter, int warmup_iter)
+    : BaseSUT(
+          sample_file, model_file, processor_file, batch_size, split_len,
+          test_scenario, processor, profiler_folder, profiler_iter,
+          warmup_iter),
+      nProducers_(pro_inter_parallel),
+      nThreadsPerProducer_(pro_intra_parallel),
+      nConsumers_(inter_parallel),
+      nThreadsPerConsumer_(intra_parallel),
+      mProThreshold_(pro_batch_size),
+      mLengthThreshold_(qos_len),
+      mProcessedQueue_(3000) {
   mResponseThreshold_ = (response_size == -1) ? mThreshold_ : response_size;
 
   // Verify nConsumers_
-  if ((nProducers_ * nThreadsPerProducer_ + nConsumers_ * nThreadsPerConsumer_) > (nMaxThread_ / (mHt_+1)))
-    nConsumers_ = (nMaxThread_ / (mHt_ + 1) - nProducers_ * nThreadsPerProducer_) / nThreadsPerConsumer_;
+  if ((nProducers_ * nThreadsPerProducer_ +
+       nConsumers_ * nThreadsPerConsumer_) > (nMaxThread_ / (mHt_ + 1)))
+    nConsumers_ =
+        (nMaxThread_ / (mHt_ + 1) - nProducers_ * nThreadsPerProducer_) /
+        nThreadsPerConsumer_;
 
   // Construct instances & bind core(assume 2 sockets)
   std::vector<int> producer_root(nProducers_);
   std::vector<int> consumer_root(nConsumers_);
   // if even, staggered binding
-  if (ceil(nProducers_ / nSockets_) * nThreadsPerProducer_
-      + ceil(nConsumers_ / nSockets_) * nThreadsPerConsumer_ == nCoresPerSocket_) {
-    int producer_part[] = {nMaxThread_ - nCoresPerSocket_ * nSockets_, nMaxThread_ - nCoresPerSocket_};
-    std::generate(producer_root.begin(), producer_root.end(), [=, index = 0, root = 0]() mutable
-        {root=producer_part[index & 1] + nThreadsPerProducer_ * (index >> 1); ++index; return root;});
+  if (ceil(nProducers_ / nSockets_) * nThreadsPerProducer_ +
+          ceil(nConsumers_ / nSockets_) * nThreadsPerConsumer_ ==
+      nCoresPerSocket_) {
+    int producer_part[] = {
+        nMaxThread_ - nCoresPerSocket_ * nSockets_,
+        nMaxThread_ - nCoresPerSocket_};
+    std::generate(
+        producer_root.begin(), producer_root.end(),
+        [=, index = 0, root = 0]() mutable {
+          root = producer_part[index & 1] + nThreadsPerProducer_ * (index >> 1);
+          ++index;
+          return root;
+        });
 
-    int consumer_part[] = {nMaxThread_,
-      nMaxThread_ - nProducers_ / nSockets_ * nThreadsPerProducer_ - (nConsumers_ + nSockets_ - 1) / nSockets_ * nThreadsPerConsumer_};    
-    std::generate(consumer_root.begin(), consumer_root.end(), [=, index = 0, root = 0]() mutable
-        {root=consumer_part[index & 1] - nThreadsPerConsumer_ * ((index >> 1) + 1); ++index; return root;});
+    int consumer_part[] = {
+        nMaxThread_,
+        nMaxThread_ - nProducers_ / nSockets_ * nThreadsPerProducer_ -
+            (nConsumers_ + nSockets_ - 1) / nSockets_ * nThreadsPerConsumer_};
+    std::generate(
+        consumer_root.begin(), consumer_root.end(),
+        [=, index = 0, root = 0]() mutable {
+          root = consumer_part[index & 1] -
+                 nThreadsPerConsumer_ * ((index >> 1) + 1);
+          ++index;
+          return root;
+        });
   } else {  // sequential binding
     int producer_start = nMaxThread_ - nCoresPerSocket_ * nSockets_;
-    std::generate(producer_root.begin(), producer_root.end(), [=, index = 0, root = 0]() mutable
-        {root=producer_start + nThreadsPerProducer_ * index++; return root;});
+    std::generate(
+        producer_root.begin(), producer_root.end(),
+        [=, index = 0, root = 0]() mutable {
+          root = producer_start + nThreadsPerProducer_ * index++;
+          return root;
+        });
 
     int consumer_start = producer_start + nProducers_ * nThreadsPerProducer_;
-    std::generate(consumer_root.begin(), consumer_root.end(), [=, index = 0, root = 0]() mutable
-        {root=consumer_start + nThreadsPerConsumer_ * index++; return root;});
+    std::generate(
+        consumer_root.begin(), consumer_root.end(),
+        [=, index = 0, root = 0]() mutable {
+          root = consumer_start + nThreadsPerConsumer_ * index++;
+          return root;
+        });
   }
 
-  for (int i = 0; i < nProducers_; ++ i) {
+  for (int i = 0; i < nProducers_; ++i) {
     mInstances_.emplace_back(&ServerSUT::thProducer, this, i, producer_root[i]);
-    std::cout << "Binding producer " << i << " to " << producer_root[i] << "-" << producer_root[i] + nThreadsPerProducer_ - 1 << std::endl << std::flush;
+    std::cout << "Binding producer " << i << " to " << producer_root[i] << "-"
+              << producer_root[i] + nThreadsPerProducer_ - 1 << std::endl
+              << std::flush;
   }
 
-  for (int i = 0; i < nConsumers_; ++ i) {
+  for (int i = 0; i < nConsumers_; ++i) {
     mInstances_.emplace_back(&ServerSUT::thConsumer, this, i, consumer_root[i]);
-    std::cout << "Binding consumer " << i << " to " << consumer_root[i] << "-" << consumer_root[i] + nThreadsPerConsumer_ - 1 << std::endl << std::flush;
+    std::cout << "Binding consumer " << i << " to " << consumer_root[i] << "-"
+              << consumer_root[i] + nThreadsPerConsumer_ - 1 << std::endl
+              << std::flush;
   }
 }
 
@@ -333,7 +365,8 @@ void ServerSUT::warmup(int which, int warmup_iter, int worker_type) {
       case Producer:
         if (processor_flag_) {
           std::tie(x, x_lens) = qsl_.GenerateDummySamples(batch_size, true);
-          std::tie(x, x_lens) = processor_.forward(which, x, x_lens, pad_batch_size_);
+          std::tie(x, x_lens) =
+              processor_.forward(which, x, x_lens, pad_batch_size_);
         }
         break;
       case Consumer:
@@ -343,7 +376,8 @@ void ServerSUT::warmup(int which, int warmup_iter, int worker_type) {
         model_.forward(which, state);
         break;
       default:
-        std::cout << "Unknown, worker type must be [Producer/Consumer]" << std::endl;
+        std::cout << "Unknown, worker type must be [Producer/Consumer]"
+                  << std::endl;
     }
   }
   // auto end = std::chrono::high_resolution_clock::now();
@@ -355,28 +389,28 @@ void ServerSUT::thProducer(int index, int root) {
   at::NoGradGuard no_grad;
 
   kmp::KMPLauncher thCtrl;
-  std::vector<int> places (nThreadsPerProducer_);
+  std::vector<int> places(nThreadsPerProducer_);
   auto which = index & 1;
 
-  for (int i = 0; i < nThreadsPerProducer_; ++i)
-    places[i] = (root + i);
+  for (int i = 0; i < nThreadsPerProducer_; ++i) places[i] = (root + i);
 
   thCtrl.setAffinityPlaces(places).pinThreads();
 
-  if (warmup_iter_ > 0)
-    warmup(which, warmup_iter_, Producer);
+  if (warmup_iter_ > 0) warmup(which, warmup_iter_, Producer);
 
   Queue_t snippet;
 
   // Wait for work
   std::string log_name;
   if (profiler_iter_ > 1) {
-    log_name = profiler_folder_ + "/" + Name() + "Producer_" + std::to_string(index) + "_" + std::to_string(which) + ".json";
+    log_name = profiler_folder_ + "/" + Name() + "Producer_" +
+               std::to_string(index) + "_" + std::to_string(which) + ".json";
     std::ofstream out(log_name);
   }
 
   {
-    auto guard_ = std::make_unique<ProfileRecord>((profiler_iter_ > 0), log_name);
+    auto guard_ =
+        std::make_unique<ProfileRecord>((profiler_iter_ > 0), log_name);
     size_t nIteration = 0;
     // long dequeue_dur = 0, process_dur = 0, enqueue_dur = 0, produce_dur = 0;
     while (true) {
@@ -384,7 +418,9 @@ void ServerSUT::thProducer(int index, int root) {
       {
         if (mLengthThreshold_ > 0) {
           std::unique_lock<std::mutex> l(mtx_);
-          ctrl_.wait(l, [this] {return mStop_ || !mQueue_.empty() || !mQosQueue_.empty();});
+          ctrl_.wait(l, [this] {
+            return mStop_ || !mQueue_.empty() || !mQosQueue_.empty();
+          });
 
           if (mStop_) break;
 
@@ -416,7 +452,7 @@ void ServerSUT::thProducer(int index, int root) {
           if (snippet.empty()) continue;
         } else {
           std::unique_lock<std::mutex> l(mtx_);
-          ctrl_.wait(l, [this] {return mStop_ || !mQueue_.empty();});
+          ctrl_.wait(l, [this] { return mStop_ || !mQueue_.empty(); });
 
           if (mStop_) break;
 
@@ -427,7 +463,7 @@ void ServerSUT::thProducer(int index, int root) {
           snippet.clear();
           snippet.splice(snippet.begin(), mQueue_, mQueue_.begin(), it);
 
-          if (!mQueue_.empty())  ctrl_.notify_one();
+          if (!mQueue_.empty()) ctrl_.notify_one();
           if (snippet.empty()) continue;
         }
       }
@@ -436,17 +472,21 @@ void ServerSUT::thProducer(int index, int root) {
 
       std::vector<mlperf::QuerySample> samples(snippet.begin(), snippet.end());
       std::vector<mlperf::QuerySampleIndex> indices(samples.size());
-      std::transform(samples.cbegin(), samples.cend(), indices.begin(),
-          [](mlperf::QuerySample sample) {return sample.index;});
+      std::transform(
+          samples.cbegin(), samples.cend(), indices.begin(),
+          [](mlperf::QuerySample sample) { return sample.index; });
       // auto dequeue_end = mlperf::PerfClock::now();
       // dequeue_dur = get_duration(iter_start, dequeue_end);
 
       at::Tensor x, x_lens;
       if (processor_flag_) {
-        std::tie(x, x_lens) = qsl_.AssembleSamples(std::move(indices), processor_flag_);
-        std::tie(x, x_lens) = processor_.forward(which, x, x_lens, pad_batch_size_);
+        std::tie(x, x_lens) =
+            qsl_.AssembleSamples(std::move(indices), processor_flag_);
+        std::tie(x, x_lens) =
+            processor_.forward(which, x, x_lens, pad_batch_size_);
       } else {
-        std::tie(x, x_lens) = qsl_.AssembleSamples(std::move(indices), processor_flag_, samples.size());
+        std::tie(x, x_lens) = qsl_.AssembleSamples(
+            std::move(indices), processor_flag_, samples.size());
         x = x.permute({1, 2, 0}).contiguous();  // {T, N, C} -> {N, C, T}
       }
       // auto processor_end = mlperf::PerfClock::now();
@@ -456,7 +496,9 @@ void ServerSUT::thProducer(int index, int root) {
       auto fea_lens_list = torch::split(x_lens, 1);
       // TODO: bulk_enqueue
       for (int i = 0; i < samples.size(); ++i) {
-        mProcessedQueue_.enqueue({samples[i], fea_list[i].permute({2, 0, 1}).contiguous(), fea_lens_list[i]});
+        mProcessedQueue_.enqueue(
+            {samples[i], fea_list[i].permute({2, 0, 1}).contiguous(),
+             fea_lens_list[i]});
       }
       // auto enqueue_end = mlperf::PerfClock::now();
       // enqueue_dur = get_duration(process_end, enqueue_end);
@@ -465,11 +507,14 @@ void ServerSUT::thProducer(int index, int root) {
       // auto latency = get_latency(samples[0]);
       // std::cout << "Producer," << index << ",iter," << nIteration
       //     << ",in," << samples.size() << ",out," << fea_lens_list.size()
-      //     << ",lqueue," << mQueue_.size() << ",pqueue," << mProcessedQueue_.size_approx()
-          // << ",deq," << dequeue_dur << ",proc," << process_dur << ",enq," << enqueue_dur
-          // << ",prod," << produce_dur << ",lat," << get_latency(samples[0])
-          // << std::endl << std::flush;
-      // BaseSUT::QuerySamplesComplete(samples, fea);  // Test processor only(response {N, C, T})
+      //     << ",lqueue," << mQueue_.size() << ",pqueue," <<
+      //     mProcessedQueue_.size_approx()
+      // << ",deq," << dequeue_dur << ",proc," << process_dur << ",enq," <<
+      // enqueue_dur
+      // << ",prod," << produce_dur << ",lat," << get_latency(samples[0])
+      // << std::endl << std::flush;
+      // BaseSUT::QuerySamplesComplete(samples, fea);  // Test processor
+      // only(response {N, C, T})
 
       nIteration += 1;
       if (profiler_iter_ > 0 && nIteration >= profiler_iter_)
@@ -482,63 +527,70 @@ void ServerSUT::thConsumer(int index, int root) {
   at::NoGradGuard no_grad;
 
   kmp::KMPLauncher thCtrl;
-  std::vector<int> places (nThreadsPerConsumer_);
+  std::vector<int> places(nThreadsPerConsumer_);
   auto which = index & 1;
 
-  for (int i = 0; i < nThreadsPerConsumer_; ++i)
-    places[i] = (root + i);
+  for (int i = 0; i < nThreadsPerConsumer_; ++i) places[i] = (root + i);
 
   thCtrl.setAffinityPlaces(places).pinThreads();
 
-  if (warmup_iter_ > 0)
-    warmup(which, warmup_iter_, Consumer);
+  if (warmup_iter_ > 0) warmup(which, warmup_iter_, Consumer);
 
   Queue_t snippet;
 
   // Wait for work
   std::string log_name;
   if (profiler_iter_ > 1) {
-    log_name = profiler_folder_ + "/" + Name() + "Consumer_" + std::to_string(index) + "_" + std::to_string(which) + ".json";
+    log_name = profiler_folder_ + "/" + Name() + "Consumer_" +
+               std::to_string(index) + "_" + std::to_string(which) + ".json";
     std::ofstream out(log_name);
   }
 
   {
-    auto guard_ = std::make_unique<ProfileRecord>((profiler_iter_ > 0), log_name);
+    auto guard_ =
+        std::make_unique<ProfileRecord>((profiler_iter_ > 0), log_name);
 
     int32_t dequeue_size;
 
     std::vector<mlperf::QuerySample> samples(mThreshold_);
-    rnnt::PipelineState state (mThreshold_, split_len_, mResponseThreshold_);
+    rnnt::PipelineState state(mThreshold_, split_len_, mResponseThreshold_);
 
     int nIteration = 0;
-    // long dequeue_dur = 0, batch_dur = 0, encode_dur = 0, decode_dur = 0, response_dur = 0;
+    // long dequeue_dur = 0, batch_dur = 0, encode_dur = 0, decode_dur = 0,
+    // response_dur = 0;
     while (true) {
       // mlperf::PerfClock::time_point iter_start = mlperf::PerfClock::now();
-      std::vector<std::tuple<mlperf::QuerySample, at::Tensor, at::Tensor>> dequeue_list(mThreshold_);
+      std::vector<std::tuple<mlperf::QuerySample, at::Tensor, at::Tensor>>
+          dequeue_list(mThreshold_);
       dequeue_size = 0;
 
       bool finish_dequeue = false;
-      while (!mStop_ && !finish_dequeue && dequeue_size == 0 && state.finish_size_ != 0) {
+      while (!mStop_ && !finish_dequeue && dequeue_size == 0 &&
+             state.finish_size_ != 0) {
         // no new samples left
-        if (lStop_ && mQosQueue_.empty() && mProcessedQueue_.size_approx() == 0) {
+        if (lStop_ && mQosQueue_.empty() &&
+            mProcessedQueue_.size_approx() == 0) {
           finish_dequeue = true;
           break;
         }
-        dequeue_size = mProcessedQueue_.wait_dequeue_bulk_timed(dequeue_list.begin(), state.finish_size_, 0);
-        if (state.remain_size_ != 0)
-          break;
+        dequeue_size = mProcessedQueue_.wait_dequeue_bulk_timed(
+            dequeue_list.begin(), state.finish_size_, 0);
+        if (state.remain_size_ != 0) break;
       }
       // auto dequeue_end = mlperf::PerfClock::now();
       // dequeue_dur = get_duration(iter_start, dequeue_end);
 
       if (mStop_ || (finish_dequeue && state.remain_size_ == 0)) {
-        std::cout << "Consumer " << index << " finish iteration " << nIteration << std::endl << std::flush;
+        std::cout << "Consumer " << index << " finish iteration " << nIteration
+                  << std::endl
+                  << std::flush;
         break;
       }
 
       // std::cout << "Consumer," << index << ",iter," << nIteration
       //     << ",dequeue," << dequeue_size << ",require," << state.finish_size_
-      //     << ",queue," << mProcessedQueue_.size_approx() << std::endl << std::flush;
+      //     << ",queue," << mProcessedQueue_.size_approx() << std::endl <<
+      //     std::flush;
 
       state.update(dequeue_list, samples, dequeue_size, split_len_);
       // auto batch_end = mlperf::PerfClock::now();
@@ -559,10 +611,14 @@ void ServerSUT::thConsumer(int index, int root) {
       // std::cout << "finish response" << std::endl << std::flush;
 
       // std::cout << "Consumer," << index << ",iter," << nIteration
-      //     << ",infer," << state.batch_size_ << ",finish," << state.finish_size_ << ",remain," << state.remain_size_
-      //     << ",pad," << state.padded_size_ << ",dequeue," << state.dequeue_size_
-      //     << ",lqueue," << mQueue_.size() << ",pqueue," << mProcessedQueue_.size_approx()
-      //     // << ",deq," << dequeue_dur << ",batch," << batch_dur << ",enc," << encode_dur << ",dec," << decode_dur
+      //     << ",infer," << state.batch_size_ << ",finish," <<
+      //     state.finish_size_ << ",remain," << state.remain_size_
+      //     << ",pad," << state.padded_size_ << ",dequeue," <<
+      //     state.dequeue_size_
+      //     << ",lqueue," << mQueue_.size() << ",pqueue," <<
+      //     mProcessedQueue_.size_approx()
+      //     // << ",deq," << dequeue_dur << ",batch," << batch_dur << ",enc,"
+      //     << encode_dur << ",dec," << decode_dur
       //     // << ",response," << response_dur
       //     << std::endl << std::flush;
 
@@ -576,21 +632,29 @@ void ServerSUT::thConsumer(int index, int root) {
 void ServerSUT::QuerySamplesComplete(
     const std::vector<mlperf::QuerySample>& samples,
     const rnnt::PipelineState& state) {
-  std::vector<mlperf::QuerySampleResponse> responses(state.finish_size_ - state.padded_size_);
+  std::vector<mlperf::QuerySampleResponse> responses(
+      state.finish_size_ - state.padded_size_);
   auto res_lens = state.res_idx_ + 1;
 
   size_t j = 0;
   for (size_t i = 0; i < samples.size(); ++i) {
     auto res_len = res_lens[i].item().toInt();
-    if (state.finish_idx_[i].item().toBool() && state.F_lens_[i].item().toInt() > 0) {
+    if (state.finish_idx_[i].item().toBool() &&
+        state.F_lens_[i].item().toInt() > 0) {
       responses[j].id = samples[i].id;
       responses[j].data = reinterpret_cast<uintptr_t>(state.res_[i].data_ptr());
       responses[j].size = res_len * 4;
       ++j;
       auto latency = get_latency(samples[i]);
       if (latency >= 1000)
-        std::cout << "finish sample " << samples[i].index << "::" << samples[i].id << ", len " << state.F_lens_[i].item().toInt() << " ,cost " << latency << " ms\n" << std::flush;
-      // std::cout << samples[i].index << "::" << models::TorchModel::sequence_to_string(state.res_[i], res_len) << std::endl << std::flush;
+        std::cout << "finish sample " << samples[i].index
+                  << "::" << samples[i].id << ", len "
+                  << state.F_lens_[i].item().toInt() << " ,cost " << latency
+                  << " ms\n"
+                  << std::flush;
+      // std::cout << samples[i].index << "::" <<
+      // models::TorchModel::sequence_to_string(state.res_[i], res_len) <<
+      // std::endl << std::flush;
     }
   }
   mlperf::QuerySamplesComplete(responses.data(), responses.size());

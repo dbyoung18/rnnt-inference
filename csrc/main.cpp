@@ -1,28 +1,27 @@
 #include <loadgen.h>
 #include <omp.h>
-#include <iostream>
-#include <vector>
-#include <thread>
 #include <unistd.h>
 
+#include <iostream>
+#include <thread>
+#include <vector>
+
 #include "cxxopts.hpp"
-#include "torch_sut.hpp"
 #include "test_settings.h"
+#include "torch_sut.hpp"
 
 std::map<std::string, mlperf::TestScenario> scenario_map = {
-  {"Offline", mlperf::TestScenario::Offline},
-  {"Server", mlperf::TestScenario::Server}};
+    {"Offline", mlperf::TestScenario::Offline},
+    {"Server", mlperf::TestScenario::Server}};
 
 int main(int argc, char **argv) {
-  cxxopts::Options opts (
-    "rnnt_inference", "MLPerf Benchmark, RNN-T Inference");
+  cxxopts::Options opts("rnnt_inference", "MLPerf Benchmark, RNN-T Inference");
   // opts.allow_unrecognised_options();
   opts.add_options(
       "", {{"s,sample_file", "LibriSpeech Sample File",
             cxxopts::value<std::string>()},
 
-           {"m,model_file", "Torch Model File",
-            cxxopts::value<std::string>()},
+           {"m,model_file", "Torch Model File", cxxopts::value<std::string>()},
 
            {"processor_file", "Audio Processor File",
             cxxopts::value<std::string>()},
@@ -117,11 +116,9 @@ int main(int argc, char **argv) {
 
   if (test_scenario == "Offline") {
     rnnt::OfflineSUT sut(
-      sample_file, model_file, processor_file,
-      inter_parallel, intra_parallel,
-      batch_size, split_len,
-      test_scenario, processor_flag,
-      profiler_folder, profiler_iter, warmup_iter);
+        sample_file, model_file, processor_file, inter_parallel, intra_parallel,
+        batch_size, split_len, test_scenario, processor_flag, profiler_folder,
+        profiler_iter, warmup_iter);
 
     if (warmup_iter > 0) {
       std::cout << "Start warmup..." << std::endl;
@@ -134,11 +131,10 @@ int main(int argc, char **argv) {
     std::cout << "Testing done." << std::endl;
   } else {
     rnnt::ServerSUT sut(
-      sample_file, model_file, processor_file,
-      pro_inter_parallel, pro_intra_parallel, inter_parallel, intra_parallel,
-      pro_batch_size, batch_size, split_len, response_size, qos_len,
-      test_scenario, processor_flag,
-      profiler_folder, profiler_iter, warmup_iter);
+        sample_file, model_file, processor_file, pro_inter_parallel,
+        pro_intra_parallel, inter_parallel, intra_parallel, pro_batch_size,
+        batch_size, split_len, response_size, qos_len, test_scenario,
+        processor_flag, profiler_folder, profiler_iter, warmup_iter);
 
     if (warmup_iter > 0) {
       sleep(15);
